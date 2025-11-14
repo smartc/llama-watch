@@ -1,0 +1,45 @@
+[package]
+name = "llama-watch"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web framework
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# MQTT client
+rumqttc = "0.24"
+
+# HTTP client for ASCOM endpoints
+reqwest = { version = "0.12", features = ["json"] }
+
+# JSON path extraction
+jsonpath-rust = "0.5"
+
+# Configuration and state management
+parking_lot = "0.12"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
