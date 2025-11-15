@@ -9,6 +9,9 @@ pub struct AlpacaResponse<T> {
     pub server_transaction_i_d: u32,
     pub error_number: i32,
     pub error_message: String,
+    /// Non-standard field for additional information (e.g., safety status details)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<String>,
 }
 
 impl<T: Default> AlpacaResponse<T> {
@@ -19,6 +22,18 @@ impl<T: Default> AlpacaResponse<T> {
             server_transaction_i_d: server_id,
             error_number: 0,
             error_message: String::new(),
+            comments: None,
+        }
+    }
+
+    pub fn success_with_comments(value: T, client_id: u32, server_id: u32, comments: String) -> Self {
+        Self {
+            value,
+            client_transaction_i_d: client_id,
+            server_transaction_i_d: server_id,
+            error_number: 0,
+            error_message: String::new(),
+            comments: Some(comments),
         }
     }
 
@@ -29,6 +44,7 @@ impl<T: Default> AlpacaResponse<T> {
             server_transaction_i_d: server_id,
             error_number,
             error_message,
+            comments: None,
         }
     }
 }

@@ -75,6 +75,37 @@ impl MonitorState {
         })
     }
 
+    /// Get a human-readable description of why the status is unsafe
+    pub fn get_unsafe_reason(&self) -> Option<String> {
+        let all_statuses = self.get_all_statuses();
+
+        if all_statuses.is_empty() {
+            return None;
+        }
+
+        let mut reasons = Vec::new();
+
+        for status in all_statuses {
+            if let Some(error) = &status.error {
+                reasons.push(format!("{}: Error - {}", status.name, error));
+            } else if !status.is_safe {
+                let value_str = status.current_value
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_else(|| "N/A".to_string());
+                reasons.push(format!(
+                    "{}: Unsafe condition (value: {}, threshold: {:.2})",
+                    status.name, value_str, status.threshold
+                ));
+            }
+        }
+
+        if reasons.is_empty() {
+            None
+        } else {
+            Some(reasons.join("; "))
+        }
+    }
+
     pub fn get_all_statuses(&self) -> Vec<MonitorStatus> {
         let mut statuses = Vec::new();
         statuses.extend(self.mqtt_manager.get_statuses());
