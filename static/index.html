@@ -3,21 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLAMA Safety Monitor - Configuration</title>
+
+    <title>Llama Watch - Configuration</title>
+
+    <!-- FAVICONS -->
+    <link rel="icon" type="image/png" sizes="16x16" href="img/logo_16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="img/logo_32.png">
+    <link rel="icon" type="image/png" sizes="48x48" href="img/logo_48.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="img/logo_64.png">
+
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
     <div class="header">
-        <h1>🦙 LLAMA Safety Monitor</h1>
+        <h1>
+            <img class="logo" src="img/logo_48.png" alt="Llama Watch Logo">
+            Llama Watch
+        </h1>
         <p>ASCOM Alpaca Safety Sensor with MQTT & Alpaca Endpoint Monitoring</p>
     </div>
 
-    <div class="container">
+    <div class="container"> 
+
+        
         <div id="status-banner" class="status-banner">
             Loading...
         </div>
 
-        <div class="content">
             <div class="tab-container">
                 <button class="tab active" onclick="switchTab('status')">Status</button>
                 <button class="tab" onclick="switchTab('mqtt-servers')">MQTT Servers</button>

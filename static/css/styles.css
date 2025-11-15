@@ -374,3 +374,11 @@ body {
     0%, 100% { opacity: 0.2; }
     50% { opacity: 0.6; }
 }
+
+/* Logo placement in header */
+.logo {
+    height: 1.1em;           /* Matches text height cleanly */
+    vertical-align: middle; /* Aligns with baseline of “Llama Watch” */
+    margin-right: 10px;     /* Space between logo and text */
+    image-rendering: auto;  /* Ensure smooth scaling */
+}
