@@ -259,9 +259,10 @@ function renderMqttMonitors() {
             <div class="list-item-info">
                 <strong>${monitor.name}</strong> (${monitor.id})<br>
                 Server: ${monitor.server_id}, Topic: ${monitor.topic}<br>
-                JSON Path: ${monitor.json_path}, Threshold: ${getOperatorSymbol(monitor.operator)} ${monitor.threshold}
+                JSON Path: ${monitor.json_path || '(raw value)'}, Threshold: ${getOperatorSymbol(monitor.operator)} ${monitor.threshold}
             </div>
             <div class="list-item-actions">
+                <button class="btn btn-primary" onclick="editMqttMonitor('${monitor.id}')">Edit</button>
                 <button class="btn btn-danger" onclick="deleteMqttMonitor('${monitor.id}')">Delete</button>
             </div>
         </div>
@@ -283,12 +284,32 @@ function showAddMqttMonitor() {
     currentEditType = 'mqtt-monitor';
     document.getElementById('mqtt-monitor-form').style.display = 'block';
     document.getElementById('mqtt-monitor-id').value = '';
+    document.getElementById('mqtt-monitor-id').disabled = false;
     document.getElementById('mqtt-monitor-name').value = '';
     document.getElementById('mqtt-monitor-topic').value = '';
     document.getElementById('mqtt-monitor-json-path').value = '';
     document.getElementById('mqtt-monitor-threshold').value = '';
     document.getElementById('mqtt-monitor-operator').value = 'greaterthan';
     document.getElementById('mqtt-monitor-safe-when-true').checked = true;
+}
+
+function editMqttMonitor(id) {
+    const monitor = config.mqtt_monitors[id];
+    if (!monitor) return;
+
+    updateMqttServerSelects();
+    currentEditId = id;
+    currentEditType = 'mqtt-monitor';
+    document.getElementById('mqtt-monitor-form').style.display = 'block';
+    document.getElementById('mqtt-monitor-id').value = monitor.id;
+    document.getElementById('mqtt-monitor-id').disabled = true; // Can't change ID when editing
+    document.getElementById('mqtt-monitor-name').value = monitor.name;
+    document.getElementById('mqtt-monitor-server').value = monitor.server_id;
+    document.getElementById('mqtt-monitor-topic').value = monitor.topic;
+    document.getElementById('mqtt-monitor-json-path').value = monitor.json_path || '';
+    document.getElementById('mqtt-monitor-threshold').value = monitor.threshold;
+    document.getElementById('mqtt-monitor-operator').value = monitor.operator;
+    document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
 }
 
 function cancelMqttMonitor() {
@@ -302,13 +323,19 @@ function saveMqttMonitor() {
     const name = document.getElementById('mqtt-monitor-name').value.trim();
     const server_id = document.getElementById('mqtt-monitor-server').value;
     const topic = document.getElementById('mqtt-monitor-topic').value.trim();
-    const json_path = document.getElementById('mqtt-monitor-json-path').value.trim();
+    const json_path_raw = document.getElementById('mqtt-monitor-json-path').value.trim();
     const threshold = parseFloat(document.getElementById('mqtt-monitor-threshold').value);
     const operator = document.getElementById('mqtt-monitor-operator').value;
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
 
-    if (!id || !name || !server_id || !topic || !json_path || isNaN(threshold)) {
+    if (!id || !name || !server_id || !topic || isNaN(threshold)) {
         showNotification('Please fill in all required fields', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.mqtt_monitors[id]) {
+        showNotification('Monitor ID already exists', 'error');
         return;
     }
 
@@ -317,7 +344,7 @@ function saveMqttMonitor() {
         name,
         server_id,
         topic,
-        json_path,
+        json_path: json_path_raw || null, // null for raw values, string for JSON path
         threshold,
         operator,
         safe_when_true
@@ -360,6 +387,7 @@ function renderAlpacaMonitors() {
                 Property: ${monitor.property}, Threshold: ${getOperatorSymbol(monitor.operator)} ${monitor.threshold}
             </div>
             <div class="list-item-actions">
+                <button class="btn btn-primary" onclick="editAlpacaMonitor('${monitor.id}')">Edit</button>
                 <button class="btn btn-danger" onclick="deleteAlpacaMonitor('${monitor.id}')">Delete</button>
             </div>
         </div>
@@ -371,6 +399,7 @@ function showAddAlpacaMonitor() {
     currentEditType = 'alpaca-monitor';
     document.getElementById('alpaca-monitor-form').style.display = 'block';
     document.getElementById('alpaca-monitor-id').value = '';
+    document.getElementById('alpaca-monitor-id').disabled = false;
     document.getElementById('alpaca-monitor-name').value = '';
     document.getElementById('alpaca-monitor-host').value = '';
     document.getElementById('alpaca-monitor-port').value = '11111';
@@ -380,6 +409,26 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-threshold').value = '';
     document.getElementById('alpaca-monitor-operator').value = 'greaterthan';
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
+}
+
+function editAlpacaMonitor(id) {
+    const monitor = config.alpaca_monitors[id];
+    if (!monitor) return;
+
+    currentEditId = id;
+    currentEditType = 'alpaca-monitor';
+    document.getElementById('alpaca-monitor-form').style.display = 'block';
+    document.getElementById('alpaca-monitor-id').value = monitor.id;
+    document.getElementById('alpaca-monitor-id').disabled = true;
+    document.getElementById('alpaca-monitor-name').value = monitor.name;
+    document.getElementById('alpaca-monitor-host').value = monitor.host;
+    document.getElementById('alpaca-monitor-port').value = monitor.port;
+    document.getElementById('alpaca-monitor-device-type').value = monitor.device_type;
+    document.getElementById('alpaca-monitor-device-number').value = monitor.device_number;
+    document.getElementById('alpaca-monitor-property').value = monitor.property;
+    document.getElementById('alpaca-monitor-threshold').value = monitor.threshold;
+    document.getElementById('alpaca-monitor-operator').value = monitor.operator;
+    document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
 }
 
 function cancelAlpacaMonitor() {
@@ -402,6 +451,12 @@ function saveAlpacaMonitor() {
 
     if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold)) {
         showNotification('Please fill in all required fields', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.alpaca_monitors[id]) {
+        showNotification('Monitor ID already exists', 'error');
         return;
     }
 

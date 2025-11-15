@@ -36,7 +36,8 @@ pub struct MqttMonitorConfig {
     pub name: String,
     pub server_id: String,
     pub topic: String,
-    pub json_path: String, // e.g., "$.Volts.1" or "Volts.1"
+    #[serde(default)]
+    pub json_path: Option<String>, // e.g., "$.Volts.1" or "Volts.1", or None for raw numeric values
     pub threshold: f64,
     pub operator: ComparisonOperator,
     pub safe_when_true: bool, // if true, safe when comparison is true; if false, unsafe when true

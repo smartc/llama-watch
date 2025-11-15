@@ -147,12 +147,24 @@ impl MqttMonitor {
     }
 
     fn process_message(config: &MqttMonitorConfig, payload: &str) -> Result<(f64, bool)> {
-        // Parse JSON
-        let json: Value = serde_json::from_str(payload)
-            .context("Failed to parse JSON payload")?;
-
-        // Extract value using JSON path
-        let value = Self::extract_value(&json, &config.json_path)?;
+        let value = match &config.json_path {
+            None => {
+                // No JSON path - treat payload as raw numeric value
+                payload.trim().parse::<f64>()
+                    .context("Failed to parse raw payload as number")?
+            }
+            Some(path) if path.is_empty() => {
+                // Empty path - treat as raw numeric value
+                payload.trim().parse::<f64>()
+                    .context("Failed to parse raw payload as number")?
+            }
+            Some(path) => {
+                // Parse JSON and extract value using path
+                let json: Value = serde_json::from_str(payload)
+                    .context("Failed to parse JSON payload")?;
+                Self::extract_value(&json, path)?
+            }
+        };
 
         // Compare with threshold
         let comparison_result = config.operator.compare(value, config.threshold);
