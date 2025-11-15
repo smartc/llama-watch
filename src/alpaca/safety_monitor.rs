@@ -8,7 +8,7 @@ use parking_lot::RwLock as SyncRwLock;
 use std::sync::{atomic::{AtomicU32, Ordering}, Arc};
 use tokio::sync::RwLock;
 
-use super::models::{AlpacaResponse, ConnectedRequest, QueryParams};
+use super::models::{AlpacaResponse, ConnectedRequest, QueryParams, ActionRequest, CommandRequest};
 use crate::monitors::MonitorState;
 
 pub struct SafetyMonitor {
@@ -276,5 +276,145 @@ pub async fn get_supported_actions(
         vec![], // No custom actions supported
         params.client_transaction_i_d,
         server_id,
+    ))
+}
+
+// PUT /api/v1/safetymonitor/{device}/action
+pub async fn put_action(
+    Path(device): Path<u32>,
+    State(state): State<SharedAppState>,
+    Form(request): Form<ActionRequest>,
+) -> Json<AlpacaResponse<String>> {
+    let server_id = state.safety_monitor.next_transaction_id();
+
+    if device != 0 {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x400,
+            "Invalid device number".to_string(),
+        ));
+    }
+
+    if !*state.safety_monitor.connected.read() {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x407,
+            "Device not connected".to_string(),
+        ));
+    }
+
+    // No custom actions are supported
+    Json(AlpacaResponse::error(
+        request.client_transaction_i_d,
+        server_id,
+        0x40C,
+        format!("Action '{}' is not supported", request.action),
+    ))
+}
+
+// PUT /api/v1/safetymonitor/{device}/commandblind
+pub async fn put_command_blind(
+    Path(device): Path<u32>,
+    State(state): State<SharedAppState>,
+    Form(request): Form<CommandRequest>,
+) -> Json<AlpacaResponse<()>> {
+    let server_id = state.safety_monitor.next_transaction_id();
+
+    if device != 0 {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x400,
+            "Invalid device number".to_string(),
+        ));
+    }
+
+    if !*state.safety_monitor.connected.read() {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x407,
+            "Device not connected".to_string(),
+        ));
+    }
+
+    // CommandBlind is not implemented
+    Json(AlpacaResponse::error(
+        request.client_transaction_i_d,
+        server_id,
+        0x40C,
+        "CommandBlind is not implemented".to_string(),
+    ))
+}
+
+// PUT /api/v1/safetymonitor/{device}/commandbool
+pub async fn put_command_bool(
+    Path(device): Path<u32>,
+    State(state): State<SharedAppState>,
+    Form(request): Form<CommandRequest>,
+) -> Json<AlpacaResponse<bool>> {
+    let server_id = state.safety_monitor.next_transaction_id();
+
+    if device != 0 {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x400,
+            "Invalid device number".to_string(),
+        ));
+    }
+
+    if !*state.safety_monitor.connected.read() {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x407,
+            "Device not connected".to_string(),
+        ));
+    }
+
+    // CommandBool is not implemented
+    Json(AlpacaResponse::error(
+        request.client_transaction_i_d,
+        server_id,
+        0x40C,
+        "CommandBool is not implemented".to_string(),
+    ))
+}
+
+// PUT /api/v1/safetymonitor/{device}/commandstring
+pub async fn put_command_string(
+    Path(device): Path<u32>,
+    State(state): State<SharedAppState>,
+    Form(request): Form<CommandRequest>,
+) -> Json<AlpacaResponse<String>> {
+    let server_id = state.safety_monitor.next_transaction_id();
+
+    if device != 0 {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x400,
+            "Invalid device number".to_string(),
+        ));
+    }
+
+    if !*state.safety_monitor.connected.read() {
+        return Json(AlpacaResponse::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x407,
+            "Device not connected".to_string(),
+        ));
+    }
+
+    // CommandString is not implemented
+    Json(AlpacaResponse::error(
+        request.client_transaction_i_d,
+        server_id,
+        0x40C,
+        "CommandString is not implemented".to_string(),
     ))
 }

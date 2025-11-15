@@ -63,3 +63,28 @@ pub struct QueryParams {
     #[serde(default)]
     pub client_transaction_i_d: u32,
 }
+
+/// PUT request for Action method
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ActionRequest {
+    #[serde(default)]
+    pub client_i_d: u32,
+    #[serde(default)]
+    pub client_transaction_i_d: u32,
+    pub action: String,
+    pub parameters: String,
+}
+
+/// PUT request for Command methods
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct CommandRequest {
+    #[serde(default)]
+    pub client_i_d: u32,
+    #[serde(default)]
+    pub client_transaction_i_d: u32,
+    pub command: String,
+    #[serde(default)]
+    pub raw: bool,
+}
