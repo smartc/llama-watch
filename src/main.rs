@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use tracing_subscriber;
 
+use alpaca::discovery::DiscoveryService;
 use alpaca::safety_monitor::{AppState, SafetyMonitor};
 use config::load_config;
 use monitors::MonitorState;
@@ -76,6 +77,14 @@ async fn main() -> Result<()> {
     let app = axum::Router::new()
         .merge(alpaca::create_router(alpaca_state))
         .merge(web::create_router(web_state));
+
+    // Start ASCOM Alpaca discovery service
+    let discovery = Arc::new(DiscoveryService::new(
+        server_port,
+        safety_monitor.device_name.clone(),
+    ));
+    discovery.start();
+    info!("🔍 ASCOM Alpaca discovery service started on UDP port 32227");
 
     // Start server
     let addr = format!("0.0.0.0:{}", server_port);

@@ -1,6 +1,7 @@
 pub mod models;
 pub mod safety_monitor;
 pub mod management;
+pub mod discovery;
 
 use axum::{
     routing::{get, put},

@@ -1,6 +1,26 @@
 use axum::{response::Json, extract::State};
 use serde::{Deserialize, Serialize};
+use sha2::{Sha256, Digest};
 use super::safety_monitor::SharedAppState;
+
+/// Generate a unique device ID based on hardware
+fn generate_unique_id() -> String {
+    // Try to get MAC address for stable unique ID
+    match mac_address::get_mac_address() {
+        Ok(Some(mac)) => {
+            // Hash the MAC address to create a stable unique ID
+            let mut hasher = Sha256::new();
+            hasher.update(mac.bytes());
+            let result = hasher.finalize();
+            let hash_hex = hex::encode(&result[..8]); // Use first 8 bytes (16 hex chars)
+            format!("llama-watch-{}", hash_hex)
+        }
+        _ => {
+            // Fallback to a default ID if MAC address is not available
+            "llama-watch-00000000-0000-0000-0000-000000000000".to_string()
+        }
+    }
+}
 
 /// Server description for Alpaca discovery
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,7 +75,7 @@ pub async fn get_configured_devices(
             device_name: state.safety_monitor.device_name.clone(),
             device_type: "SafetyMonitor".to_string(),
             device_number: 0,
-            unique_i_d: "llama-safety-monitor-00000000-0000-0000-0000-000000000000".to_string(),
+            unique_i_d: generate_unique_id(),
         }],
     })
 }

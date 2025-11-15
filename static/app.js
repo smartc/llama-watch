@@ -204,6 +204,7 @@ function renderMqttServers() {
                 ${server.username ? ` (user: ${server.username})` : ''}
             </div>
             <div class="list-item-actions">
+                <button class="btn btn-primary" onclick="editMqttServer('${server.id}')">Edit</button>
                 <button class="btn btn-danger" onclick="deleteMqttServer('${server.id}')">Delete</button>
             </div>
         </div>
@@ -215,10 +216,26 @@ function showAddMqttServer() {
     currentEditType = 'mqtt-server';
     document.getElementById('mqtt-server-form').style.display = 'block';
     document.getElementById('mqtt-server-id').value = '';
+    document.getElementById('mqtt-server-id').disabled = false;
     document.getElementById('mqtt-server-host').value = '';
     document.getElementById('mqtt-server-port').value = '1883';
     document.getElementById('mqtt-server-username').value = '';
     document.getElementById('mqtt-server-password').value = '';
+}
+
+function editMqttServer(id) {
+    const server = config.mqtt_servers[id];
+    if (!server) return;
+
+    currentEditId = id;
+    currentEditType = 'mqtt-server';
+    document.getElementById('mqtt-server-form').style.display = 'block';
+    document.getElementById('mqtt-server-id').value = server.id;
+    document.getElementById('mqtt-server-id').disabled = true; // Can't change ID when editing
+    document.getElementById('mqtt-server-host').value = server.host;
+    document.getElementById('mqtt-server-port').value = server.port;
+    document.getElementById('mqtt-server-username').value = server.username || '';
+    document.getElementById('mqtt-server-password').value = server.password || '';
 }
 
 function cancelMqttServer() {
@@ -236,6 +253,12 @@ function saveMqttServer() {
 
     if (!id || !host || !port) {
         showNotification('Please fill in all required fields', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.mqtt_servers[id]) {
+        showNotification('Server ID already exists', 'error');
         return;
     }
 
