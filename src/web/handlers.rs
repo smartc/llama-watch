@@ -62,8 +62,53 @@ pub async fn get_status(
     State(state): State<SharedWebState>,
 ) -> Json<serde_json::Value> {
     let monitor_state = state.monitor_state.read().await;
-    let statuses = monitor_state.get_all_statuses();
+    let config = state.config.read().await;
+
+    let mut statuses = monitor_state.get_all_statuses();
     let is_safe = monitor_state.is_safe();
+
+    // Add disabled monitors from config (they won't be in active monitor state)
+    let mut active_ids: std::collections::HashSet<String> = statuses
+        .iter()
+        .map(|s| s.id.clone())
+        .collect();
+
+    // Add disabled MQTT monitors
+    for (id, mqtt_config) in &config.mqtt_monitors {
+        if !mqtt_config.enabled && !active_ids.contains(id) {
+            statuses.push(crate::config::models::MonitorStatus {
+                id: id.clone(),
+                name: mqtt_config.name.clone(),
+                monitor_type: "MQTT".to_string(),
+                is_safe: false,
+                current_value: None,
+                threshold: mqtt_config.threshold,
+                last_update: None,
+                error: Some("Monitor disabled".to_string()),
+                raw_payload: None,
+                enabled: false,
+            });
+            active_ids.insert(id.clone());
+        }
+    }
+
+    // Add disabled ALPACA monitors
+    for (id, alpaca_config) in &config.alpaca_monitors {
+        if !alpaca_config.enabled && !active_ids.contains(id) {
+            statuses.push(crate::config::models::MonitorStatus {
+                id: id.clone(),
+                name: alpaca_config.name.clone(),
+                monitor_type: "ALPACA".to_string(),
+                is_safe: false,
+                current_value: None,
+                threshold: alpaca_config.threshold,
+                last_update: None,
+                error: Some("Monitor disabled".to_string()),
+                raw_payload: None,
+                enabled: false,
+            });
+        }
+    }
 
     Json(serde_json::json!({
         "is_safe": is_safe,
