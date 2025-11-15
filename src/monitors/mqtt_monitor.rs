@@ -234,13 +234,14 @@ impl MqttMonitor {
 
     fn value_to_f64(value: &Value) -> Result<f64> {
         match value {
+            Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
             Value::Number(n) => n
                 .as_f64()
                 .ok_or_else(|| anyhow::anyhow!("Failed to convert number to f64")),
             Value::String(s) => s
                 .parse::<f64>()
                 .context("Failed to parse string as f64"),
-            _ => Err(anyhow::anyhow!("Value is not a number: {:?}", value)),
+            _ => Err(anyhow::anyhow!("Value is not convertible to number: {:?}", value)),
         }
     }
 }
