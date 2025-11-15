@@ -13,6 +13,18 @@ body {
     overflow-x: hidden;
 }
 
+.header {
+    max-width: 1200px;
+    margin: 0 auto 20px auto;
+    position: relative;
+    background: transparent;
+    color: white;
+    padding: 30px;
+    text-align: center;
+    overflow: hidden;
+    z-index: 1;
+}
+
 .container {
     max-width: 1200px;
     margin: 0 auto;
@@ -22,15 +34,6 @@ body {
     overflow: hidden;
     position: relative;
     z-index: 1;
-}
-
-.header {
-    position: relative;
-    background: transparent;
-    color: white;
-    padding: 30px;
-    text-align: center;
-    overflow: hidden;
 }
 
 .header h1 {
