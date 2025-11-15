@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLAMA Safety Monitor - Configuration</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦙 LLAMA Safety Monitor</h1>
+            <p>ASCOM Alpaca Safety Sensor with MQTT & Alpaca Endpoint Monitoring</p>
+        </div>
+
+        <div id="status-banner" class="status-banner">
+            Loading...
+        </div>
+
+        <div class="content">
+            <div class="tab-container">
+                <button class="tab active" onclick="switchTab('status')">Status</button>
+                <button class="tab" onclick="switchTab('mqtt-servers')">MQTT Servers</button>
+                <button class="tab" onclick="switchTab('mqtt-monitors')">MQTT Monitors</button>
+                <button class="tab" onclick="switchTab('alpaca-monitors')">Alpaca Monitors</button>
+                <button class="tab" onclick="switchTab('settings')">Settings</button>
+            </div>
+
+            <!-- Status Tab -->
+            <div id="tab-status" class="tab-content active">
+                <div class="section">
+                    <h2>Monitor Status</h2>
+                    <div id="monitor-status-list"></div>
+                </div>
+            </div>
+
+            <!-- MQTT Servers Tab -->
+            <div id="tab-mqtt-servers" class="tab-content">
+                <div class="section">
+                    <h2>MQTT Servers</h2>
+                    <button class="btn btn-primary" onclick="showAddMqttServer()">Add MQTT Server</button>
+                    <div id="mqtt-servers-list" class="list-container"></div>
+                </div>
+
+                <div id="mqtt-server-form" class="section" style="display: none;">
+                    <h2>Add/Edit MQTT Server</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Server ID *</label>
+                            <input type="text" id="mqtt-server-id" placeholder="e.g., mqtt-main">
+                        </div>
+                        <div class="form-group">
+                            <label>Host *</label>
+                            <input type="text" id="mqtt-server-host" placeholder="e.g., mqtt.example.com">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Port *</label>
+                            <input type="number" id="mqtt-server-port" value="1883">
+                        </div>
+                        <div class="form-group">
+                            <label>Username (optional)</label>
+                            <input type="text" id="mqtt-server-username">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Password (optional)</label>
+                        <input type="password" id="mqtt-server-password">
+                    </div>
+                    <button class="btn btn-success" onclick="saveMqttServer()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelMqttServer()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- MQTT Monitors Tab -->
+            <div id="tab-mqtt-monitors" class="tab-content">
+                <div class="section">
+                    <h2>MQTT Monitors</h2>
+                    <button class="btn btn-primary" onclick="showAddMqttMonitor()">Add MQTT Monitor</button>
+                    <div id="mqtt-monitors-list" class="list-container"></div>
+                </div>
+
+                <div id="mqtt-monitor-form" class="section" style="display: none;">
+                    <h2>Add/Edit MQTT Monitor</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Monitor ID *</label>
+                            <input type="text" id="mqtt-monitor-id" placeholder="e.g., solar-voltage">
+                        </div>
+                        <div class="form-group">
+                            <label>Monitor Name *</label>
+                            <input type="text" id="mqtt-monitor-name" placeholder="e.g., Solar Panel Voltage">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>MQTT Server *</label>
+                            <select id="mqtt-monitor-server"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Topic *</label>
+                            <input type="text" id="mqtt-monitor-topic" placeholder="e.g., observatory/power/solar1">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>JSON Path</label>
+                            <input type="text" id="mqtt-monitor-json-path" placeholder="e.g., Volts.1 or Temperature">
+                            <div class="info-text">Key name from JSON object (leave blank for raw numeric values). Handles keys with dots automatically.</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Threshold Value *</label>
+                            <input type="number" step="0.01" id="mqtt-monitor-threshold" placeholder="e.g., 12.00">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Comparison Operator *</label>
+                            <select id="mqtt-monitor-operator">
+                                <option value="greaterthan">Greater Than (&gt;)</option>
+                                <option value="lessthan">Less Than (&lt;)</option>
+                                <option value="equal">Equal (=)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="mqtt-monitor-safe-when-true" checked>
+                                <span>Safe when comparison is TRUE</span>
+                            </label>
+                            <div class="info-text">If unchecked, monitor reports UNSAFE when comparison is true</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout (seconds)</label>
+                        <input type="number" id="mqtt-monitor-timeout" value="300" min="0">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds, 0 to disable)</div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveMqttMonitor()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelMqttMonitor()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Alpaca Monitors Tab -->
+            <div id="tab-alpaca-monitors" class="tab-content">
+                <div class="section">
+                    <h2>ASCOM Alpaca Monitors</h2>
+                    <button class="btn btn-primary" onclick="showAddAlpacaMonitor()">Add Alpaca Monitor</button>
+                    <div id="alpaca-monitors-list" class="list-container"></div>
+                </div>
+
+                <div id="alpaca-monitor-form" class="section" style="display: none;">
+                    <h2>Add/Edit ASCOM Alpaca Monitor</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Monitor ID *</label>
+                            <input type="text" id="alpaca-monitor-id" placeholder="e.g., roof-safety">
+                        </div>
+                        <div class="form-group">
+                            <label>Monitor Name *</label>
+                            <input type="text" id="alpaca-monitor-name" placeholder="e.g., Roof Safety Monitor">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Host *</label>
+                            <input type="text" id="alpaca-monitor-host" placeholder="e.g., 192.168.1.100">
+                        </div>
+                        <div class="form-group">
+                            <label>Port *</label>
+                            <input type="number" id="alpaca-monitor-port" value="11111">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Device Type *</label>
+                            <input type="text" id="alpaca-monitor-device-type" placeholder="e.g., safetymonitor">
+                            <div class="info-text">Device type in lowercase (safetymonitor, switch, etc.)</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Device Number *</label>
+                            <input type="number" id="alpaca-monitor-device-number" value="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Property *</label>
+                            <input type="text" id="alpaca-monitor-property" placeholder="e.g., issafe">
+                            <div class="info-text">Property name in lowercase (issafe, value, etc.)</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Threshold Value *</label>
+                            <input type="number" step="0.01" id="alpaca-monitor-threshold" placeholder="e.g., 1.0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Comparison Operator *</label>
+                            <select id="alpaca-monitor-operator">
+                                <option value="greaterthan">Greater Than (&gt;)</option>
+                                <option value="lessthan">Less Than (&lt;)</option>
+                                <option value="equal">Equal (=)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="alpaca-monitor-safe-when-true" checked>
+                                <span>Safe when comparison is TRUE</span>
+                            </label>
+                            <div class="info-text">If unchecked, monitor reports UNSAFE when comparison is true</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout (seconds)</label>
+                        <input type="number" id="alpaca-monitor-timeout" value="300" min="0">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds, 0 to disable)</div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveAlpacaMonitor()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelAlpacaMonitor()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="tab-settings" class="tab-content">
+                <div class="section">
+                    <h2>General Settings</h2>
+                    <div class="form-group">
+                        <label>Device Name</label>
+                        <input type="text" id="device-name" placeholder="LLAMA Safety Monitor">
+                    </div>
+                    <div class="form-group">
+                        <label>Server Port</label>
+                        <input type="number" id="server-port" value="8080">
+                        <div class="info-text">Port requires application restart to take effect</div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveSettings()">Save Settings</button>
+                </div>
+
+                <div class="section">
+                    <h2>Actions</h2>
+                    <button class="btn btn-primary" onclick="refreshStatus()">Refresh Status</button>
+                    <p class="info-text" style="margin-top: 15px;">
+                        Monitors automatically reload when you save changes. Only restart if you change the server port.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/starfield.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
