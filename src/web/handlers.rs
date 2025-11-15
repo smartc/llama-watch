@@ -110,6 +110,9 @@ pub async fn get_status(
         }
     }
 
+    // Sort monitors alphabetically by name for consistent display order
+    statuses.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
     Json(serde_json::json!({
         "is_safe": is_safe,
         "monitors": statuses,
