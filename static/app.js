@@ -291,6 +291,7 @@ function showAddMqttMonitor() {
     document.getElementById('mqtt-monitor-threshold').value = '';
     document.getElementById('mqtt-monitor-operator').value = 'greaterthan';
     document.getElementById('mqtt-monitor-safe-when-true').checked = true;
+    document.getElementById('mqtt-monitor-timeout').value = '300';
 }
 
 function editMqttMonitor(id) {
@@ -310,6 +311,7 @@ function editMqttMonitor(id) {
     document.getElementById('mqtt-monitor-threshold').value = monitor.threshold;
     document.getElementById('mqtt-monitor-operator').value = monitor.operator;
     document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
+    document.getElementById('mqtt-monitor-timeout').value = monitor.timeout_seconds || 300;
 }
 
 function cancelMqttMonitor() {
@@ -327,8 +329,9 @@ function saveMqttMonitor() {
     const threshold = parseFloat(document.getElementById('mqtt-monitor-threshold').value);
     const operator = document.getElementById('mqtt-monitor-operator').value;
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
+    const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
 
-    if (!id || !name || !server_id || !topic || isNaN(threshold)) {
+    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds)) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -347,7 +350,8 @@ function saveMqttMonitor() {
         json_path: json_path_raw || null, // null for raw values, string for JSON path
         threshold,
         operator,
-        safe_when_true
+        safe_when_true,
+        timeout_seconds
     };
 
     saveConfig().then(success => {
@@ -409,6 +413,7 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-threshold').value = '';
     document.getElementById('alpaca-monitor-operator').value = 'greaterthan';
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
+    document.getElementById('alpaca-monitor-timeout').value = '300';
 }
 
 function editAlpacaMonitor(id) {
@@ -429,6 +434,7 @@ function editAlpacaMonitor(id) {
     document.getElementById('alpaca-monitor-threshold').value = monitor.threshold;
     document.getElementById('alpaca-monitor-operator').value = monitor.operator;
     document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
+    document.getElementById('alpaca-monitor-timeout').value = monitor.timeout_seconds || 300;
 }
 
 function cancelAlpacaMonitor() {
@@ -448,8 +454,9 @@ function saveAlpacaMonitor() {
     const threshold = parseFloat(document.getElementById('alpaca-monitor-threshold').value);
     const operator = document.getElementById('alpaca-monitor-operator').value;
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
+    const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
 
-    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold)) {
+    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds)) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -470,7 +477,8 @@ function saveAlpacaMonitor() {
         property,
         threshold,
         operator,
-        safe_when_true
+        safe_when_true,
+        timeout_seconds
     };
 
     saveConfig().then(success => {

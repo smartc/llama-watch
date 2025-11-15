@@ -428,6 +428,11 @@
                             <div class="info-text">If unchecked, monitor reports UNSAFE when comparison is true</div>
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label>Timeout (seconds)</label>
+                        <input type="number" id="mqtt-monitor-timeout" value="300" min="1">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds)</div>
+                    </div>
                     <button class="btn btn-success" onclick="saveMqttMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelMqttMonitor()">Cancel</button>
                 </div>
@@ -501,6 +506,11 @@
                             </label>
                             <div class="info-text">If unchecked, monitor reports UNSAFE when comparison is true</div>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout (seconds)</label>
+                        <input type="number" id="alpaca-monitor-timeout" value="300" min="1">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds)</div>
                     </div>
                     <button class="btn btn-success" onclick="saveAlpacaMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelAlpacaMonitor()">Cancel</button>

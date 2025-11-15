@@ -41,6 +41,8 @@ pub struct MqttMonitorConfig {
     pub threshold: f64,
     pub operator: ComparisonOperator,
     pub safe_when_true: bool, // if true, safe when comparison is true; if false, unsafe when true
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +57,12 @@ pub struct AlpacaMonitorConfig {
     pub threshold: f64,
     pub operator: ComparisonOperator,
     pub safe_when_true: bool,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
+}
+
+fn default_timeout() -> u64 {
+    300
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
