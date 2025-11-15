@@ -23,7 +23,7 @@ pub struct SafetyMonitor {
 impl SafetyMonitor {
     pub fn new(device_name: String) -> Self {
         Self {
-            connected: SyncRwLock::new(true), // Auto-connect on startup since monitors are active
+            connected: SyncRwLock::new(true), // Allow connection (but actual connected state depends on monitor readiness)
             server_transaction_id: AtomicU32::new(0),
             device_name,
             description: "LLAMA Safety Monitor - Monitors MQTT and ASCOM Alpaca endpoints".to_string(),
@@ -34,6 +34,11 @@ impl SafetyMonitor {
 
     fn next_transaction_id(&self) -> u32 {
         self.server_transaction_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Check if device is truly connected (user-enabled AND monitors ready)
+    pub async fn is_connected(&self, monitor_state: &SharedMonitorState) -> bool {
+        *self.connected.read() && monitor_state.read().await.is_ready()
     }
 }
 
@@ -65,7 +70,7 @@ pub async fn is_safe(
         ));
     }
 
-    if !*state.safety_monitor.connected.read() {
+    if !state.safety_monitor.is_connected(&state.monitor_state).await {
         return Json(AlpacaResponse::error(
             params.client_transaction_i_d,
             server_id,
@@ -100,7 +105,8 @@ pub async fn get_connected(
         ));
     }
 
-    let connected = *state.safety_monitor.connected.read();
+    // Connected = user-enabled AND monitors are ready (configured + have data)
+    let connected = state.safety_monitor.is_connected(&state.monitor_state).await;
 
     Json(AlpacaResponse::success(
         connected,
@@ -296,7 +302,7 @@ pub async fn put_action(
         ));
     }
 
-    if !*state.safety_monitor.connected.read() {
+    if !state.safety_monitor.is_connected(&state.monitor_state).await {
         return Json(AlpacaResponse::error(
             request.client_transaction_i_d,
             server_id,
@@ -331,7 +337,7 @@ pub async fn put_command_blind(
         ));
     }
 
-    if !*state.safety_monitor.connected.read() {
+    if !state.safety_monitor.is_connected(&state.monitor_state).await {
         return Json(AlpacaResponse::error(
             request.client_transaction_i_d,
             server_id,
@@ -366,7 +372,7 @@ pub async fn put_command_bool(
         ));
     }
 
-    if !*state.safety_monitor.connected.read() {
+    if !state.safety_monitor.is_connected(&state.monitor_state).await {
         return Json(AlpacaResponse::error(
             request.client_transaction_i_d,
             server_id,
@@ -401,7 +407,7 @@ pub async fn put_command_string(
         ));
     }
 
-    if !*state.safety_monitor.connected.read() {
+    if !state.safety_monitor.is_connected(&state.monitor_state).await {
         return Json(AlpacaResponse::error(
             request.client_transaction_i_d,
             server_id,
