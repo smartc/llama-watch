@@ -115,15 +115,16 @@ function renderMonitorStatus(monitors) {
         const lastUpdate = monitor.last_update
             ? new Date(monitor.last_update).toLocaleString()
             : 'Never';
-        const toggleText = monitor.enabled ? 'Disable' : 'Enable';
-        const toggleClass = monitor.enabled ? 'btn-secondary' : 'btn-success';
 
         return `
             <div class="card ${statusClass}">
                 <h3>
                     <span class="status-indicator ${statusClass}"></span>
                     ${monitor.name} (${monitor.monitor_type})
-                    <button class="btn ${toggleClass}" style="float: right; font-size: 0.8em;" onclick="toggleMonitor('${monitor.id}', '${monitor.monitor_type}', ${!monitor.enabled})">${toggleText}</button>
+                    <label class="monitor-toggle" style="float: right;">
+                        <input type="checkbox" ${monitor.enabled ? 'checked' : ''} onchange="toggleMonitor('${monitor.id}', '${monitor.monitor_type}', this.checked)">
+                        <span>Enabled</span>
+                    </label>
                 </h3>
                 <div class="card-grid">
                     <div class="card-row">

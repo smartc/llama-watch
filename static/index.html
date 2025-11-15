@@ -129,6 +129,26 @@
             color: #333;
         }
 
+        .monitor-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            user-select: none;
+        }
+
+        .monitor-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #4caf50;
+        }
+
+        .monitor-toggle span {
+            font-weight: normal;
+        }
+
         .card-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
