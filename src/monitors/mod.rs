@@ -23,8 +23,11 @@ impl MonitorState {
     }
 
     pub async fn initialize(&mut self, config: &AppConfig) -> Result<()> {
-        // Initialize MQTT monitors
+        // Initialize MQTT monitors (only enabled ones)
         for (_, mqtt_config) in &config.mqtt_monitors {
+            if !mqtt_config.enabled {
+                continue; // Skip disabled monitors
+            }
             if let Some(server_config) = config.mqtt_servers.get(&mqtt_config.server_id) {
                 self.mqtt_manager
                     .add_monitor(mqtt_config.clone(), server_config.clone())
@@ -32,8 +35,11 @@ impl MonitorState {
             }
         }
 
-        // Initialize ASCOM Alpaca monitors
+        // Initialize ASCOM Alpaca monitors (only enabled ones)
         for (_, alpaca_config) in &config.alpaca_monitors {
+            if !alpaca_config.enabled {
+                continue; // Skip disabled monitors
+            }
             self.alpaca_manager
                 .add_monitor(alpaca_config.clone())
                 .await?;

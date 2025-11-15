@@ -34,6 +34,7 @@ impl AlpacaMonitor {
             last_update: None,
             error: None,
             raw_payload: None,
+            enabled: config.enabled,
         }));
 
         Self {
@@ -45,6 +46,9 @@ impl AlpacaMonitor {
 
     pub fn get_status(&self) -> MonitorStatus {
         let mut status = self.status.read().clone();
+
+        // Update enabled state from config
+        status.enabled = self.config.enabled;
 
         // Check for timeout (if enabled - 0 means disabled)
         if self.config.timeout_seconds > 0 {

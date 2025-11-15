@@ -110,17 +110,20 @@ function renderMonitorStatus(monitors) {
     }
 
     container.innerHTML = monitors.map(monitor => {
-        const statusClass = monitor.is_safe ? 'safe' : 'unsafe';
-        const statusText = monitor.is_safe ? 'SAFE' : 'UNSAFE';
+        const statusClass = monitor.enabled ? (monitor.is_safe ? 'safe' : 'unsafe') : 'disabled';
+        const statusText = monitor.enabled ? (monitor.is_safe ? 'SAFE' : 'UNSAFE') : 'DISABLED';
         const lastUpdate = monitor.last_update
             ? new Date(monitor.last_update).toLocaleString()
             : 'Never';
+        const toggleText = monitor.enabled ? 'Disable' : 'Enable';
+        const toggleClass = monitor.enabled ? 'btn-secondary' : 'btn-success';
 
         return `
             <div class="card ${statusClass}">
                 <h3>
                     <span class="status-indicator ${statusClass}"></span>
                     ${monitor.name} (${monitor.monitor_type})
+                    <button class="btn ${toggleClass}" style="float: right; font-size: 0.8em;" onclick="toggleMonitor('${monitor.id}', '${monitor.monitor_type}', ${!monitor.enabled})">${toggleText}</button>
                 </h3>
                 <div class="card-grid">
                     <div class="card-row">
@@ -155,6 +158,33 @@ function renderMonitorStatus(monitors) {
             </div>
         `;
     }).join('');
+}
+
+// Toggle monitor enabled/disabled
+async function toggleMonitor(id, monitorType, enabled) {
+    const endpoint = monitorType === 'MQTT'
+        ? `/api/monitors/mqtt/${id}/toggle`
+        : `/api/monitors/alpaca/${id}/toggle`;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+
+        if (response.ok) {
+            showNotification(`Monitor ${enabled ? 'enabled' : 'disabled'} successfully`, 'success');
+            await loadConfig();  // Reload config to update UI
+            await refreshStatus(); // Refresh status immediately
+        } else {
+            const error = await response.text();
+            showNotification(`Failed to toggle monitor: ${error}`, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to toggle monitor', 'error');
+        console.error(error);
+    }
 }
 
 // MQTT Servers
@@ -351,7 +381,8 @@ function saveMqttMonitor() {
         threshold,
         operator,
         safe_when_true,
-        timeout_seconds
+        timeout_seconds,
+        enabled: true // New monitors are enabled by default
     };
 
     saveConfig().then(success => {
@@ -478,7 +509,8 @@ function saveAlpacaMonitor() {
         threshold,
         operator,
         safe_when_true,
-        timeout_seconds
+        timeout_seconds,
+        enabled: true // New monitors are enabled by default
     };
 
     saveConfig().then(success => {
