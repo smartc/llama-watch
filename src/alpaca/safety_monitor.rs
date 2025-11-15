@@ -82,14 +82,14 @@ pub async fn is_safe(
     let monitor_state = state.monitor_state.read().await;
     let is_safe = monitor_state.is_safe();
 
-    // If unsafe, get the reason and include it in the Comments field
+    // If unsafe, get the detailed comments and include them in the Comments field
     if !is_safe {
-        if let Some(reason) = monitor_state.get_unsafe_reason() {
+        if let Some(comments) = monitor_state.get_safety_comments() {
             return Json(AlpacaResponse::success_with_comments(
                 is_safe,
                 params.client_transaction_i_d,
                 server_id,
-                reason,
+                comments,
             ));
         }
     }

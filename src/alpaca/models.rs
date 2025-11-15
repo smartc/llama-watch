@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// Non-standard structured comments for safety status details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct SafetyComments {
+    pub unsafe_monitors: Vec<MonitorComment>,
+}
+
+/// Details about an unsafe monitor
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct MonitorComment {
+    pub monitor: String,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+    pub threshold: f64,
+}
+
 /// Standard ASCOM Alpaca response wrapper
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -11,7 +29,7 @@ pub struct AlpacaResponse<T> {
     pub error_message: String,
     /// Non-standard field for additional information (e.g., safety status details)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub comments: Option<String>,
+    pub comments: Option<SafetyComments>,
 }
 
 impl<T: Default> AlpacaResponse<T> {
@@ -26,7 +44,7 @@ impl<T: Default> AlpacaResponse<T> {
         }
     }
 
-    pub fn success_with_comments(value: T, client_id: u32, server_id: u32, comments: String) -> Self {
+    pub fn success_with_comments(value: T, client_id: u32, server_id: u32, comments: SafetyComments) -> Self {
         Self {
             value,
             client_transaction_i_d: client_id,
