@@ -81,8 +81,15 @@ class StarfieldBackground {
 
 // Initialize starfield when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    const header = document.querySelector('.header');
-    if (header) {
-        new StarfieldBackground(header);
-    }
+    // Create a container for the starfield and append it to body
+    const starfieldWrapper = document.createElement('div');
+    starfieldWrapper.id = 'starfield-wrapper';
+    document.body.insertBefore(starfieldWrapper, document.body.firstChild);
+
+    // Initialize starfield with more stars for full page coverage
+    new StarfieldBackground(starfieldWrapper, {
+        numStars: 150,  // More stars for full page
+        minSize: 0.3,
+        maxSize: 1.2
+    });
 });

@@ -9,6 +9,8 @@ body {
     background: linear-gradient(135deg, #070F12 0%, #0C0F1A 100%);
     min-height: 100vh;
     padding: 20px;
+    position: relative;
+    overflow-x: hidden;
 }
 
 .container {
@@ -18,6 +20,8 @@ body {
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     overflow: hidden;
+    position: relative;
+    z-index: 1;
 }
 
 .header {
@@ -335,13 +339,14 @@ body {
 
 /* Starfield Background Styles */
 .starfield-container {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
     overflow: hidden;
     z-index: 0;
+    pointer-events: none;
 }
 
 .starfield-gradient {
