@@ -75,8 +75,8 @@ impl MonitorState {
         let all_statuses = self.get_all_statuses();
 
         if all_statuses.is_empty() {
-            // No monitors configured - default to safe
-            return true;
+            // No monitors configured/enabled - cannot determine safety, report unsafe
+            return false;
         }
 
         // Check if any monitors are still initializing (no data yet)
@@ -91,8 +91,9 @@ impl MonitorState {
                 .collect();
 
             if monitors_with_data.is_empty() {
-                // All monitors are initializing, return last stable state or default safe
-                return self.last_stable_safe_state.unwrap_or(true);
+                // All monitors are initializing, return last stable state or default unsafe
+                // (We can't claim it's safe if we have no data)
+                return self.last_stable_safe_state.unwrap_or(false);
             }
 
             // Check if any monitor with data is unsafe
@@ -104,8 +105,8 @@ impl MonitorState {
             }
 
             // All monitors with data are safe, but some are still initializing
-            // Hold the last stable state or default to safe
-            return self.last_stable_safe_state.unwrap_or(true);
+            // Hold the last stable state or default to unsafe (conservative approach)
+            return self.last_stable_safe_state.unwrap_or(false);
         }
 
         // All monitors have data - calculate normal safety
@@ -124,7 +125,7 @@ impl MonitorState {
         let all_statuses = self.get_all_statuses();
 
         if all_statuses.is_empty() {
-            return true;
+            return false; // No monitors = unsafe
         }
 
         // Only check monitors that have data
@@ -134,7 +135,9 @@ impl MonitorState {
             .collect();
 
         if monitors_with_data.is_empty() {
-            return true; // No data yet, assume safe
+            // No data yet from any monitors - can't determine safety
+            // This would only happen during initial startup, defer to last_stable_safe_state
+            return self.last_stable_safe_state.unwrap_or(false);
         }
 
         monitors_with_data.iter().all(|status| {
