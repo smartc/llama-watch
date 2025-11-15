@@ -23,7 +23,7 @@ pub struct SafetyMonitor {
 impl SafetyMonitor {
     pub fn new(device_name: String) -> Self {
         Self {
-            connected: SyncRwLock::new(false),
+            connected: SyncRwLock::new(true), // Auto-connect on startup since monitors are active
             server_transaction_id: AtomicU32::new(0),
             device_name,
             description: "LLAMA Safety Monitor - Monitors MQTT and ASCOM Alpaca endpoints".to_string(),
