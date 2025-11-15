@@ -145,6 +145,12 @@ function renderMonitorStatus(monitors) {
                         <span style="color: #f44336;">${monitor.error}</span>
                     </div>
                     ` : ''}
+                    ${monitor.raw_payload ? `
+                    <div class="card-row" style="grid-column: 1 / -1;">
+                        <span class="card-label">Raw Payload:</span>
+                        <span style="font-family: monospace; font-size: 0.85em; word-break: break-all;">${monitor.raw_payload}</span>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
         `;

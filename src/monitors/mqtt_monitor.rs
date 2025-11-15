@@ -26,6 +26,7 @@ impl MqttMonitor {
             threshold: config.threshold,
             last_update: None,
             error: None,
+            raw_payload: None,
         }));
 
         Self {
@@ -108,7 +109,7 @@ impl MqttMonitor {
             match eventloop.poll().await {
                 Ok(event) => {
                     if let Event::Incoming(Packet::Publish(publish)) = event {
-                        let payload = String::from_utf8_lossy(&publish.payload);
+                        let payload = String::from_utf8_lossy(&publish.payload).to_string();
 
                         match Self::process_message(&config, &payload) {
                             Ok((value, is_safe)) => {
@@ -117,6 +118,7 @@ impl MqttMonitor {
                                 s.is_safe = is_safe;
                                 s.last_update = Some(chrono::Utc::now());
                                 s.error = None;
+                                s.raw_payload = Some(payload.clone());
 
                                 info!(
                                     "MQTT monitor '{}': value={}, safe={}",
@@ -131,6 +133,8 @@ impl MqttMonitor {
                                 let mut s = status.write();
                                 s.error = Some(e.to_string());
                                 s.is_safe = false;
+                                s.last_update = Some(chrono::Utc::now());
+                                s.raw_payload = Some(payload.clone());
                             }
                         }
                     }
@@ -164,6 +168,14 @@ impl MqttMonitor {
     }
 
     fn extract_value(json: &Value, path: &str) -> Result<f64> {
+        // First, try direct key access (handles keys with dots like "Volts.1")
+        if let Value::Object(map) = json {
+            if let Some(value) = map.get(path) {
+                return Self::value_to_f64(value);
+            }
+        }
+
+        // If direct access fails, try JSON path query
         // Normalize path - add $ prefix if not present
         let json_path = if path.starts_with('$') {
             path.to_string()

@@ -111,4 +111,5 @@ pub struct MonitorStatus {
     pub threshold: f64,
     pub last_update: Option<chrono::DateTime<chrono::Utc>>,
     pub error: Option<String>,
+    pub raw_payload: Option<String>,
 }

@@ -33,6 +33,7 @@ impl AlpacaMonitor {
             threshold: config.threshold,
             last_update: None,
             error: None,
+            raw_payload: None,
         }));
 
         Self {
