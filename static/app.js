@@ -331,7 +331,7 @@ function saveMqttMonitor() {
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
 
-    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds)) {
+    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -456,7 +456,7 @@ function saveAlpacaMonitor() {
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
 
-    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds)) {
+    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }

@@ -46,21 +46,23 @@ impl AlpacaMonitor {
     pub fn get_status(&self) -> MonitorStatus {
         let mut status = self.status.read().clone();
 
-        // Check for timeout
-        if let Some(last_update) = status.last_update {
-            let elapsed = chrono::Utc::now().signed_duration_since(last_update);
-            if elapsed.num_seconds() as u64 > self.config.timeout_seconds {
+        // Check for timeout (if enabled - 0 means disabled)
+        if self.config.timeout_seconds > 0 {
+            if let Some(last_update) = status.last_update {
+                let elapsed = chrono::Utc::now().signed_duration_since(last_update);
+                if elapsed.num_seconds() as u64 > self.config.timeout_seconds {
+                    status.is_safe = false;
+                    status.error = Some(format!(
+                        "Timeout: No data received for {} seconds (timeout: {}s)",
+                        elapsed.num_seconds(),
+                        self.config.timeout_seconds
+                    ));
+                }
+            } else {
+                // No data ever received
                 status.is_safe = false;
-                status.error = Some(format!(
-                    "Timeout: No data received for {} seconds (timeout: {}s)",
-                    elapsed.num_seconds(),
-                    self.config.timeout_seconds
-                ));
+                status.error = Some("No data received yet".to_string());
             }
-        } else {
-            // No data ever received
-            status.is_safe = false;
-            status.error = Some("No data received yet".to_string());
         }
 
         status
