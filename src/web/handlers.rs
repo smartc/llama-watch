@@ -3,8 +3,8 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::{
     config::{models::AppConfig, save_config},
@@ -24,7 +24,7 @@ pub type SharedWebState = Arc<WebState>;
 pub async fn get_config(
     State(state): State<SharedWebState>,
 ) -> Json<AppConfig> {
-    let config = state.config.read().clone();
+    let config = state.config.read().await.clone();
     Json(config)
 }
 
@@ -43,11 +43,15 @@ pub async fn update_config(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
-    // Update in-memory configuration
-    *state.config.write() = new_config;
+    // Reload monitors with new configuration
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&new_config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+    drop(monitor_state); // Release lock
 
-    // Note: Monitors are not restarted automatically
-    // The user needs to restart the application for changes to take effect
+    // Update in-memory configuration
+    *state.config.write().await = new_config;
 
     Ok(StatusCode::OK)
 }
@@ -56,7 +60,7 @@ pub async fn update_config(
 pub async fn get_status(
     State(state): State<SharedWebState>,
 ) -> Json<serde_json::Value> {
-    let monitor_state = state.monitor_state.read();
+    let monitor_state = state.monitor_state.read().await;
     let statuses = monitor_state.get_all_statuses();
     let is_safe = monitor_state.is_safe();
 

@@ -2,8 +2,8 @@ pub mod alpaca_monitor;
 pub mod mqtt_monitor;
 
 use anyhow::Result;
-use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::config::models::{AppConfig, MonitorStatus};
 use alpaca_monitor::AlpacaMonitorManager;
@@ -40,6 +40,19 @@ impl MonitorState {
         }
 
         Ok(())
+    }
+
+    pub async fn reload(&mut self, config: &AppConfig) -> Result<()> {
+        // Shutdown all existing monitors
+        self.mqtt_manager.shutdown().await;
+        self.alpaca_manager.shutdown().await;
+
+        // Clear and reinitialize
+        self.mqtt_manager = MqttMonitorManager::new();
+        self.alpaca_manager = AlpacaMonitorManager::new();
+
+        // Initialize with new config
+        self.initialize(config).await
     }
 
     pub fn is_safe(&self) -> bool {

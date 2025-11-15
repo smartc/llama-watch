@@ -443,7 +443,7 @@ function saveSettings() {
 
     saveConfig().then(success => {
         if (success) {
-            showNotification('Settings saved. Restart required for changes to take effect.', 'success');
+            showNotification('Settings saved. Note: Server port changes require restart.', 'success');
         }
     });
 }
@@ -467,8 +467,4 @@ function showNotification(message, type) {
     setTimeout(() => {
         notification.remove();
     }, 3000);
-}
-
-function confirmRestart() {
-    alert('To apply configuration changes, restart the LLAMA Safety Monitor application.');
 }

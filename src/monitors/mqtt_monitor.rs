@@ -239,4 +239,12 @@ impl MqttMonitorManager {
     pub fn get_status(&self, id: &str) -> Option<MonitorStatus> {
         self.monitors.get(id).map(|m| m.get_status())
     }
+
+    pub async fn shutdown(&mut self) {
+        // Abort all running monitor tasks
+        for handle in self.handles.drain(..) {
+            handle.abort();
+        }
+        self.monitors.clear();
+    }
 }

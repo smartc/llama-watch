@@ -4,8 +4,8 @@ mod monitors;
 mod web;
 
 use anyhow::Result;
-use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{error, info};
 use tracing_subscriber;
 

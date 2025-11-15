@@ -4,14 +4,15 @@ use axum::{
     response::Json,
     Form,
 };
-use parking_lot::RwLock;
+use parking_lot::RwLock as SyncRwLock;
 use std::sync::{atomic::{AtomicU32, Ordering}, Arc};
+use tokio::sync::RwLock;
 
 use super::models::{AlpacaResponse, ConnectedRequest, QueryParams};
 use crate::monitors::MonitorState;
 
 pub struct SafetyMonitor {
-    pub connected: RwLock<bool>,
+    pub connected: SyncRwLock<bool>,
     pub server_transaction_id: AtomicU32,
     pub device_name: String,
     pub description: String,
@@ -22,7 +23,7 @@ pub struct SafetyMonitor {
 impl SafetyMonitor {
     pub fn new(device_name: String) -> Self {
         Self {
-            connected: RwLock::new(false),
+            connected: SyncRwLock::new(false),
             server_transaction_id: AtomicU32::new(0),
             device_name,
             description: "LLAMA Safety Monitor - Monitors MQTT and ASCOM Alpaca endpoints".to_string(),
@@ -73,7 +74,7 @@ pub async fn is_safe(
         ));
     }
 
-    let is_safe = state.monitor_state.read().is_safe();
+    let is_safe = state.monitor_state.read().await.is_safe();
 
     Json(AlpacaResponse::success(
         is_safe,
