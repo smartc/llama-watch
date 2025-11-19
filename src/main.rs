@@ -3,6 +3,8 @@ mod config;
 mod monitors;
 mod web;
 
+// #TODO: After adding a new safety sensor, the system holds it's current state - which we want in order to inadvertently trigger an `unsafe` state while we wait for the first batch of data.  However if we add a new sensor that is offline or never returns data, we should respect the timeout period for that sensor.  Please check whether that is being done already.  If not, please add that functionality.
+
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
