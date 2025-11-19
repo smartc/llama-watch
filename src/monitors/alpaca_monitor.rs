@@ -102,18 +102,20 @@ impl AlpacaMonitor {
                     Ok((value, calculated_is_safe)) => {
                         let now = chrono::Utc::now();
                         let mut s = status.write();
+                        let is_initial_reading = s.last_update.is_none();
+
                         s.current_value = Some(value);
                         s.last_update = Some(now);
                         s.error = None;
 
                         // Handle hold time logic
-                        if config.hold_time_seconds == 0 {
-                            // Immediate change (no hold time)
+                        if config.hold_time_seconds == 0 || is_initial_reading {
+                            // Immediate change (no hold time OR first reading)
                             s.is_safe = calculated_is_safe;
                             s.pending_is_safe = None;
                             s.pending_since = None;
                         } else {
-                            // Hold time is configured
+                            // Hold time is configured and this is not the first reading
                             if calculated_is_safe == s.is_safe {
                                 // Calculated state matches current state - clear any pending
                                 s.pending_is_safe = None;
