@@ -87,6 +87,9 @@ pub async fn get_status(
                 error: Some("Monitor disabled".to_string()),
                 raw_payload: None,
                 enabled: false,
+                hold_time_seconds: mqtt_config.hold_time_seconds,
+                pending_is_safe: None,
+                pending_since: None,
             });
             active_ids.insert(id.clone());
         }
@@ -106,6 +109,9 @@ pub async fn get_status(
                 error: Some("Monitor disabled".to_string()),
                 raw_payload: None,
                 enabled: false,
+                hold_time_seconds: alpaca_config.hold_time_seconds,
+                pending_is_safe: None,
+                pending_since: None,
             });
         }
     }

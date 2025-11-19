@@ -2,6 +2,7 @@ pub mod alpaca_monitor;
 pub mod mqtt_monitor;
 
 use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -59,6 +60,13 @@ impl MonitorState {
             self.last_stable_safe_state = Some(current_safe);
         }
 
+        // Save current monitor states before shutdown
+        let saved_states: HashMap<String, MonitorStatus> = self
+            .get_all_statuses()
+            .into_iter()
+            .map(|status| (status.id.clone(), status))
+            .collect();
+
         // Shutdown all existing monitors
         self.mqtt_manager.shutdown().await;
         self.alpaca_manager.shutdown().await;
@@ -68,7 +76,18 @@ impl MonitorState {
         self.alpaca_manager = AlpacaMonitorManager::new();
 
         // Initialize with new config
-        self.initialize(config).await
+        self.initialize(config).await?;
+
+        // Restore monitor states (preserve is_safe, clear pending states)
+        for (id, old_status) in saved_states {
+            // Only restore if the monitor still exists after reload
+            if let Some(_) = self.mqtt_manager.restore_state(&id, &old_status) {
+                continue;
+            }
+            self.alpaca_manager.restore_state(&id, &old_status);
+        }
+
+        Ok(())
     }
 
     pub fn is_safe(&self) -> bool {

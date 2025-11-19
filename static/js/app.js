@@ -116,6 +116,29 @@ function renderMonitorStatus(monitors) {
             ? new Date(monitor.last_update).toLocaleString()
             : 'Never';
 
+        // Calculate pending state info
+        let pendingInfo = '';
+        if (monitor.pending_is_safe !== null && monitor.pending_is_safe !== undefined && monitor.pending_since) {
+            const pendingSince = new Date(monitor.pending_since);
+            const now = new Date();
+            const elapsedSeconds = Math.floor((now - pendingSince) / 1000);
+            const remainingSeconds = Math.max(0, monitor.hold_time_seconds - elapsedSeconds);
+
+            const currentStateText = monitor.is_safe ? 'SAFE' : 'UNSAFE';
+            const pendingStateText = monitor.pending_is_safe ? 'SAFE' : 'UNSAFE';
+            const pendingClass = monitor.pending_is_safe ? 'safe' : 'unsafe';
+
+            pendingInfo = `
+                <div class="card-row" style="grid-column: 1 / -1;">
+                    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 8px; border-radius: 4px;">
+                        <strong>⏱ Pending Change:</strong> ${currentStateText} → <span class="${pendingClass}">${pendingStateText}</span>
+                        <br>
+                        <span style="font-size: 0.9em;">Countdown: ${remainingSeconds}s remaining (hold time: ${monitor.hold_time_seconds}s)</span>
+                    </div>
+                </div>
+            `;
+        }
+
         return `
             <div class="card ${statusClass}">
                 <h3>
@@ -131,6 +154,7 @@ function renderMonitorStatus(monitors) {
                         <span class="card-label">Status:</span>
                         <span>${statusText}</span>
                     </div>
+                    ${pendingInfo}
                     <div class="card-row">
                         <span class="card-label">Current Value:</span>
                         <span>${monitor.current_value !== null ? monitor.current_value.toFixed(2) : 'N/A'}</span>
@@ -143,6 +167,12 @@ function renderMonitorStatus(monitors) {
                         <span class="card-label">Last Update:</span>
                         <span>${lastUpdate}</span>
                     </div>
+                    ${monitor.hold_time_seconds > 0 ? `
+                    <div class="card-row">
+                        <span class="card-label">Hold Time:</span>
+                        <span>${monitor.hold_time_seconds}s</span>
+                    </div>
+                    ` : ''}
                     ${monitor.error ? `
                     <div class="card-row">
                         <span class="card-label">Error:</span>
@@ -346,6 +376,7 @@ function showAddMqttMonitor() {
     document.getElementById('mqtt-monitor-operator').value = 'greaterthan';
     document.getElementById('mqtt-monitor-safe-when-true').checked = true;
     document.getElementById('mqtt-monitor-timeout').value = '300';
+    document.getElementById('mqtt-monitor-hold-time').value = '0';
 }
 
 function editMqttMonitor(id) {
@@ -366,6 +397,7 @@ function editMqttMonitor(id) {
     document.getElementById('mqtt-monitor-operator').value = monitor.operator;
     document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('mqtt-monitor-timeout').value = monitor.timeout_seconds || 300;
+    document.getElementById('mqtt-monitor-hold-time').value = monitor.hold_time_seconds || 0;
 }
 
 function cancelMqttMonitor() {
@@ -384,8 +416,9 @@ function saveMqttMonitor() {
     const operator = document.getElementById('mqtt-monitor-operator').value;
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
+    const hold_time_seconds = parseInt(document.getElementById('mqtt-monitor-hold-time').value);
 
-    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0) {
+    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -406,6 +439,7 @@ function saveMqttMonitor() {
         operator,
         safe_when_true,
         timeout_seconds,
+        hold_time_seconds,
         enabled: true // New monitors are enabled by default
     };
 
@@ -469,6 +503,7 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-operator').value = 'greaterthan';
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
     document.getElementById('alpaca-monitor-timeout').value = '300';
+    document.getElementById('alpaca-monitor-hold-time').value = '0';
 }
 
 function editAlpacaMonitor(id) {
@@ -490,6 +525,7 @@ function editAlpacaMonitor(id) {
     document.getElementById('alpaca-monitor-operator').value = monitor.operator;
     document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('alpaca-monitor-timeout').value = monitor.timeout_seconds || 300;
+    document.getElementById('alpaca-monitor-hold-time').value = monitor.hold_time_seconds || 0;
 }
 
 function cancelAlpacaMonitor() {
@@ -510,8 +546,9 @@ function saveAlpacaMonitor() {
     const operator = document.getElementById('alpaca-monitor-operator').value;
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
+    const hold_time_seconds = parseInt(document.getElementById('alpaca-monitor-hold-time').value);
 
-    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0) {
+    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -534,6 +571,7 @@ function saveAlpacaMonitor() {
         operator,
         safe_when_true,
         timeout_seconds,
+        hold_time_seconds,
         enabled: true // New monitors are enabled by default
     };
 
