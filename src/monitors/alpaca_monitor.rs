@@ -271,6 +271,22 @@ impl AlpacaMonitorManager {
         self.monitors.get(id).map(|m| m.get_status())
     }
 
+    pub fn restore_state(&self, id: &str, old_status: &MonitorStatus) -> Option<()> {
+        if let Some(monitor) = self.monitors.get(id) {
+            let mut status = monitor.status.write();
+            // Preserve the safety state and current value
+            status.is_safe = old_status.is_safe;
+            status.current_value = old_status.current_value;
+            status.last_update = old_status.last_update;
+            // Clear any pending states to avoid confusion after config change
+            status.pending_is_safe = None;
+            status.pending_since = None;
+            Some(())
+        } else {
+            None
+        }
+    }
+
     pub async fn shutdown(&mut self) {
         // Abort all running monitor tasks
         for handle in self.handles.drain(..) {
