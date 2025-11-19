@@ -43,6 +43,8 @@ pub struct MqttMonitorConfig {
     pub safe_when_true: bool, // if true, safe when comparison is true; if false, unsafe when true
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
+    #[serde(default)]
+    pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
 }
@@ -61,6 +63,8 @@ pub struct AlpacaMonitorConfig {
     pub safe_when_true: bool,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
+    #[serde(default)]
+    pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
 }
@@ -130,4 +134,7 @@ pub struct MonitorStatus {
     pub error: Option<String>,
     pub raw_payload: Option<String>,
     pub enabled: bool,
+    pub hold_time_seconds: u64,
+    pub pending_is_safe: Option<bool>,
+    pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
 }

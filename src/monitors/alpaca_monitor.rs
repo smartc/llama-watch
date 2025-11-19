@@ -35,6 +35,9 @@ impl AlpacaMonitor {
             error: None,
             raw_payload: None,
             enabled: config.enabled,
+            hold_time_seconds: config.hold_time_seconds,
+            pending_is_safe: None,
+            pending_since: None,
         }));
 
         Self {
@@ -49,6 +52,22 @@ impl AlpacaMonitor {
 
         // Update enabled state from config
         status.enabled = self.config.enabled;
+        status.hold_time_seconds = self.config.hold_time_seconds;
+
+        // Check for pending state transitions and commit if hold time elapsed
+        if let (Some(pending_safe), Some(pending_since)) = (status.pending_is_safe, status.pending_since) {
+            let elapsed = chrono::Utc::now().signed_duration_since(pending_since);
+            if elapsed.num_seconds() as u64 >= self.config.hold_time_seconds {
+                // Hold time has elapsed, commit the pending state
+                let mut s = self.status.write();
+                s.is_safe = pending_safe;
+                s.pending_is_safe = None;
+                s.pending_since = None;
+                status.is_safe = pending_safe;
+                status.pending_is_safe = None;
+                status.pending_since = None;
+            }
+        }
 
         // Check for timeout (if enabled - 0 means disabled)
         if self.config.timeout_seconds > 0 {
@@ -80,16 +99,57 @@ impl AlpacaMonitor {
         let handle = tokio::spawn(async move {
             loop {
                 match Self::poll_endpoint(&config, &client).await {
-                    Ok((value, is_safe)) => {
+                    Ok((value, calculated_is_safe)) => {
+                        let now = chrono::Utc::now();
                         let mut s = status.write();
                         s.current_value = Some(value);
-                        s.is_safe = is_safe;
-                        s.last_update = Some(chrono::Utc::now());
+                        s.last_update = Some(now);
                         s.error = None;
 
+                        // Handle hold time logic
+                        if config.hold_time_seconds == 0 {
+                            // Immediate change (no hold time)
+                            s.is_safe = calculated_is_safe;
+                            s.pending_is_safe = None;
+                            s.pending_since = None;
+                        } else {
+                            // Hold time is configured
+                            if calculated_is_safe == s.is_safe {
+                                // Calculated state matches current state - clear any pending
+                                s.pending_is_safe = None;
+                                s.pending_since = None;
+                            } else {
+                                // Calculated state differs from current state
+                                if s.pending_is_safe == Some(calculated_is_safe) {
+                                    // Already pending this transition - check if hold time elapsed
+                                    if let Some(pending_since) = s.pending_since {
+                                        let elapsed = now.signed_duration_since(pending_since);
+                                        if elapsed.num_seconds() as u64 >= config.hold_time_seconds {
+                                            // Hold time elapsed - commit the change
+                                            s.is_safe = calculated_is_safe;
+                                            s.pending_is_safe = None;
+                                            s.pending_since = None;
+                                            info!(
+                                                "Alpaca monitor '{}': state change committed after hold time - safe={}",
+                                                config.name, calculated_is_safe
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    // New pending transition - reset timer
+                                    s.pending_is_safe = Some(calculated_is_safe);
+                                    s.pending_since = Some(now);
+                                    info!(
+                                        "Alpaca monitor '{}': pending state change {} -> {} (hold time: {}s)",
+                                        config.name, s.is_safe, calculated_is_safe, config.hold_time_seconds
+                                    );
+                                }
+                            }
+                        }
+
                         info!(
-                            "Alpaca monitor '{}': value={}, safe={}",
-                            config.name, value, is_safe
+                            "Alpaca monitor '{}': value={}, safe={}, pending={:?}",
+                            config.name, value, s.is_safe, s.pending_is_safe
                         );
                     }
                     Err(e) => {
