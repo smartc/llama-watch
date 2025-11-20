@@ -70,12 +70,12 @@ pub async fn is_safe(
         ));
     }
 
+    // If not connected, return false (not an error) per ASCOM standard
     if !state.safety_monitor.is_connected(&state.monitor_state).await {
-        return Json(AlpacaResponse::error(
+        return Json(AlpacaResponse::success(
+            false,
             params.client_transaction_i_d,
             server_id,
-            0x407,
-            "Device not connected".to_string(),
         ));
     }
 
