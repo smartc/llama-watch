@@ -4,11 +4,20 @@ let config = {
     mqtt_monitors: {},
     alpaca_monitors: {},
     server_port: 8080,
-    device_name: "LLAMA Safety Monitor"
+    device_name: "LLAMA Safety Monitor",
+    location: ""
 };
 
 let currentEditId = null;
 let currentEditType = null;
+
+// HTML escape function to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -16,6 +25,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshStatus();
     // Auto-refresh status every 5 seconds
     setInterval(refreshStatus, 5000);
+
+    // Handle hash navigation (for setup redirects)
+    if (window.location.hash) {
+        const tabName = window.location.hash.substring(1);
+        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'settings'];
+        if (validTabs.includes(tabName)) {
+            switchTab(tabName);
+        }
+    }
 });
 
 // Tab switching
@@ -23,14 +41,20 @@ function switchTab(tabName) {
     // Update tab buttons
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
+        // Find the button for this tab by checking its onclick attribute
+        if (tab.getAttribute('onclick') === `switchTab('${tabName}')`) {
+            tab.classList.add('active');
+        }
     });
-    event.target.classList.add('active');
 
     // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
     document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Update URL hash without triggering navigation
+    history.replaceState(null, null, `#${tabName}`);
 }
 
 // Load configuration
@@ -176,13 +200,13 @@ function renderMonitorStatus(monitors) {
                     ${monitor.error ? `
                     <div class="card-row">
                         <span class="card-label">Error:</span>
-                        <span style="color: #f44336;">${monitor.error}</span>
+                        <span style="color: #f44336;">${escapeHtml(monitor.error)}</span>
                     </div>
                     ` : ''}
                     ${monitor.raw_payload ? `
                     <div class="card-row" style="grid-column: 1 / -1;">
                         <span class="card-label">Raw Payload:</span>
-                        <span style="font-family: monospace; font-size: 0.85em; word-break: break-all;">${monitor.raw_payload}</span>
+                        <span style="font-family: monospace; font-size: 0.85em; word-break: break-all;">${escapeHtml(monitor.raw_payload)}</span>
                     </div>
                     ` : ''}
                 </div>
@@ -597,16 +621,18 @@ function deleteAlpacaMonitor(id) {
 // Settings
 function renderSettings() {
     document.getElementById('device-name').value = config.device_name || 'LLAMA Safety Monitor';
+    document.getElementById('device-location').value = config.location || '';
     document.getElementById('server-port').value = config.server_port || 8080;
 }
 
 function saveSettings() {
     config.device_name = document.getElementById('device-name').value.trim();
+    config.location = document.getElementById('device-location').value.trim();
     config.server_port = parseInt(document.getElementById('server-port').value);
 
     saveConfig().then(success => {
         if (success) {
-            showNotification('Settings saved. Note: Server port changes require restart.', 'success');
+            showNotification('Settings saved. Note: Server port and location changes require restart.', 'success');
         }
     });
 }

@@ -378,7 +378,79 @@ body {
 /* Logo placement in header */
 .logo {
     height: 1.1em;           /* Matches text height cleanly */
-    vertical-align: middle; /* Aligns with baseline of “Llama Watch” */
+    vertical-align: middle; /* Aligns with baseline of "Llama Watch" */
     margin-right: 10px;     /* Space between logo and text */
     image-rendering: auto;  /* Ensure smooth scaling */
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    .header {
+        padding: 15px;
+    }
+
+    .header h1 {
+        font-size: 1.8em;
+    }
+
+    .tab-container {
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        padding: 10px 15px;
+        font-size: 0.9em;
+        flex: 1 1 auto;
+        text-align: center;
+        min-width: 0;
+    }
+
+    .status-banner {
+        padding: 10px 15px;
+        font-size: 1em;
+    }
+
+    .section {
+        padding: 0 15px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        font-size: 0.9em;
+        margin-bottom: 10px;
+    }
+
+    .list-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .list-item-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .tab {
+        padding: 8px 10px;
+        font-size: 0.8em;
+    }
+
+    .header h1 {
+        font-size: 1.5em;
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+    }
 }

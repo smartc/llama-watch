@@ -60,8 +60,10 @@ async fn main() -> Result<()> {
 
     let shared_monitor_state = Arc::new(RwLock::new(monitor_state));
 
+    let location = config.location.clone();
+
     // Create safety monitor
-    let safety_monitor = Arc::new(SafetyMonitor::new(device_name));
+    let safety_monitor = Arc::new(SafetyMonitor::new(device_name, location));
 
     // Create application state for ASCOM Alpaca endpoints
     let alpaca_state = Arc::new(AppState {
