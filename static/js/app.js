@@ -16,6 +16,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshStatus();
     // Auto-refresh status every 5 seconds
     setInterval(refreshStatus, 5000);
+
+    // Handle hash navigation (for setup redirects)
+    if (window.location.hash) {
+        const tabName = window.location.hash.substring(1);
+        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'settings'];
+        if (validTabs.includes(tabName)) {
+            // Find and click the appropriate tab button
+            const tabButton = document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`);
+            if (tabButton) {
+                tabButton.click();
+            }
+        }
+    }
 });
 
 // Tab switching

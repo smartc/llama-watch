@@ -5,12 +5,26 @@ pub mod discovery;
 
 use axum::{
     routing::{get, put},
+    response::Redirect,
     Router,
 };
 use safety_monitor::SharedAppState;
 
+/// Redirect to main web UI status tab
+async fn setup_main() -> Redirect {
+    Redirect::to("/#status")
+}
+
+/// Redirect to device setup (settings tab)
+async fn setup_device() -> Redirect {
+    Redirect::to("/#settings")
+}
+
 pub fn create_router(state: SharedAppState) -> Router {
     Router::new()
+        // Setup pages (redirects to web UI)
+        .route("/setup", get(setup_main))
+        .route("/setup/v1/safetymonitor/:device/setup", get(setup_device))
         // Management API endpoints
         .route(
             "/management/apiversions",
