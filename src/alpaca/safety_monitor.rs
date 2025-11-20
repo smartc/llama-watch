@@ -28,8 +28,8 @@ impl SafetyMonitor {
             device_name,
             location,
             description: "LLAMA Safety Monitor - Monitors MQTT and ASCOM Alpaca endpoints".to_string(),
-            driver_info: "LLAMA Safety Monitor Driver v0.2.0".to_string(),
-            driver_version: "0.2.0".to_string(),
+            driver_info: format!("LLAMA Safety Monitor Driver v{}", env!("CARGO_PKG_VERSION")),
+            driver_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 

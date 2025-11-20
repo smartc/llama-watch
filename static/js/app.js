@@ -11,6 +11,14 @@ let config = {
 let currentEditId = null;
 let currentEditType = null;
 
+// HTML escape function to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
@@ -192,13 +200,13 @@ function renderMonitorStatus(monitors) {
                     ${monitor.error ? `
                     <div class="card-row">
                         <span class="card-label">Error:</span>
-                        <span style="color: #f44336;">${monitor.error}</span>
+                        <span style="color: #f44336;">${escapeHtml(monitor.error)}</span>
                     </div>
                     ` : ''}
                     ${monitor.raw_payload ? `
                     <div class="card-row" style="grid-column: 1 / -1;">
                         <span class="card-label">Raw Payload:</span>
-                        <span style="font-family: monospace; font-size: 0.85em; word-break: break-all;">${monitor.raw_payload}</span>
+                        <span style="font-family: monospace; font-size: 0.85em; word-break: break-all;">${escapeHtml(monitor.raw_payload)}</span>
                     </div>
                     ` : ''}
                 </div>

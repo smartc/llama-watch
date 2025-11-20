@@ -1,8 +1,8 @@
-use axum::{response::Json, extract::State};
+use axum::{response::Json, extract::{State, Query}};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use super::safety_monitor::SharedAppState;
-use super::models::AlpacaResponse;
+use super::models::{AlpacaResponse, QueryParams};
 
 /// Generate a unique device ID based on hardware
 fn generate_unique_id() -> String {
@@ -44,22 +44,25 @@ pub struct DeviceDescription {
 }
 
 /// GET /management/apiversions
-pub async fn get_api_versions() -> Json<AlpacaResponse<Vec<u32>>> {
-    Json(AlpacaResponse::success(vec![1], 0, 0))
+pub async fn get_api_versions(
+    Query(params): Query<QueryParams>,
+) -> Json<AlpacaResponse<Vec<u32>>> {
+    Json(AlpacaResponse::success(vec![1], params.client_transaction_i_d, 0))
 }
 
 /// GET /management/v1/description
 pub async fn get_description(
     State(state): State<SharedAppState>,
+    Query(params): Query<QueryParams>,
 ) -> Json<AlpacaResponse<ServerDescription>> {
     Json(AlpacaResponse::success(
         ServerDescription {
             server_name: state.safety_monitor.device_name.clone(),
             manufacturer: "Corey Smart".to_string(),
-            manufacturer_version: "0.2.0".to_string(),
+            manufacturer_version: env!("CARGO_PKG_VERSION").to_string(),
             location: state.safety_monitor.location.clone(),
         },
-        0,
+        params.client_transaction_i_d,
         0,
     ))
 }
@@ -67,6 +70,7 @@ pub async fn get_description(
 /// GET /management/v1/configureddevices
 pub async fn get_configured_devices(
     State(state): State<SharedAppState>,
+    Query(params): Query<QueryParams>,
 ) -> Json<AlpacaResponse<Vec<DeviceDescription>>> {
     Json(AlpacaResponse::success(
         vec![DeviceDescription {
@@ -75,7 +79,7 @@ pub async fn get_configured_devices(
             device_number: 0,
             unique_i_d: generate_unique_id(),
         }],
-        0,
+        params.client_transaction_i_d,
         0,
     ))
 }
