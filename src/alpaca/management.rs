@@ -2,6 +2,7 @@ use axum::{response::Json, extract::State};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 use super::safety_monitor::SharedAppState;
+use super::models::AlpacaResponse;
 
 /// Generate a unique device ID based on hardware
 fn generate_unique_id() -> String {
@@ -23,7 +24,7 @@ fn generate_unique_id() -> String {
 }
 
 /// Server description for Alpaca discovery
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ServerDescription {
     pub server_name: String,
@@ -42,40 +43,39 @@ pub struct DeviceDescription {
     pub unique_i_d: String,
 }
 
-/// Response for configured devices endpoint
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ConfiguredDevicesResponse {
-    pub value: Vec<DeviceDescription>,
-}
-
 /// GET /management/apiversions
-pub async fn get_api_versions() -> Json<Vec<u32>> {
-    Json(vec![1])
+pub async fn get_api_versions() -> Json<AlpacaResponse<Vec<u32>>> {
+    Json(AlpacaResponse::success(vec![1], 0, 0))
 }
 
 /// GET /management/v1/description
 pub async fn get_description(
     State(state): State<SharedAppState>,
-) -> Json<ServerDescription> {
-    Json(ServerDescription {
-        server_name: state.safety_monitor.device_name.clone(),
-        manufacturer: "LLAMA".to_string(),
-        manufacturer_version: "0.1.0".to_string(),
-        location: "".to_string(),
-    })
+) -> Json<AlpacaResponse<ServerDescription>> {
+    Json(AlpacaResponse::success(
+        ServerDescription {
+            server_name: state.safety_monitor.device_name.clone(),
+            manufacturer: "LLAMA".to_string(),
+            manufacturer_version: "0.1.0".to_string(),
+            location: "".to_string(),
+        },
+        0,
+        0,
+    ))
 }
 
 /// GET /management/v1/configureddevices
 pub async fn get_configured_devices(
     State(state): State<SharedAppState>,
-) -> Json<ConfiguredDevicesResponse> {
-    Json(ConfiguredDevicesResponse {
-        value: vec![DeviceDescription {
+) -> Json<AlpacaResponse<Vec<DeviceDescription>>> {
+    Json(AlpacaResponse::success(
+        vec![DeviceDescription {
             device_name: state.safety_monitor.device_name.clone(),
             device_type: "SafetyMonitor".to_string(),
             device_number: 0,
             unique_i_d: generate_unique_id(),
         }],
-    })
+        0,
+        0,
+    ))
 }
