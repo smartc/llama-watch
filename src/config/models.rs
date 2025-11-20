@@ -89,6 +89,8 @@ pub struct AppConfig {
     pub server_port: u16,
     #[serde(default)]
     pub device_name: String,
+    #[serde(default)]
+    pub location: String,
 }
 
 impl Default for ComparisonOperator {
@@ -105,6 +107,7 @@ impl AppConfig {
             alpaca_monitors: HashMap::new(),
             server_port: 8080,
             device_name: "LLAMA Safety Monitor".to_string(),
+            location: String::new(),
         }
     }
 

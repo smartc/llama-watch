@@ -14,20 +14,22 @@ pub struct SafetyMonitor {
     pub connected: SyncRwLock<bool>,
     pub server_transaction_id: AtomicU32,
     pub device_name: String,
+    pub location: String,
     pub description: String,
     pub driver_info: String,
     pub driver_version: String,
 }
 
 impl SafetyMonitor {
-    pub fn new(device_name: String) -> Self {
+    pub fn new(device_name: String, location: String) -> Self {
         Self {
             connected: SyncRwLock::new(false), // Start disconnected per ASCOM standard
             server_transaction_id: AtomicU32::new(0),
             device_name,
+            location,
             description: "LLAMA Safety Monitor - Monitors MQTT and ASCOM Alpaca endpoints".to_string(),
-            driver_info: "LLAMA Safety Monitor Driver v0.1.0".to_string(),
-            driver_version: "0.1.0".to_string(),
+            driver_info: "LLAMA Safety Monitor Driver v0.2.0".to_string(),
+            driver_version: "0.2.0".to_string(),
         }
     }
 

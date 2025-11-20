@@ -55,9 +55,9 @@ pub async fn get_description(
     Json(AlpacaResponse::success(
         ServerDescription {
             server_name: state.safety_monitor.device_name.clone(),
-            manufacturer: "LLAMA".to_string(),
-            manufacturer_version: "0.1.0".to_string(),
-            location: "".to_string(),
+            manufacturer: "Corey Smart".to_string(),
+            manufacturer_version: "0.2.0".to_string(),
+            location: state.safety_monitor.location.clone(),
         },
         0,
         0,

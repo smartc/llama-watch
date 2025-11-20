@@ -4,7 +4,8 @@ let config = {
     mqtt_monitors: {},
     alpaca_monitors: {},
     server_port: 8080,
-    device_name: "LLAMA Safety Monitor"
+    device_name: "LLAMA Safety Monitor",
+    location: ""
 };
 
 let currentEditId = null;
@@ -610,16 +611,18 @@ function deleteAlpacaMonitor(id) {
 // Settings
 function renderSettings() {
     document.getElementById('device-name').value = config.device_name || 'LLAMA Safety Monitor';
+    document.getElementById('device-location').value = config.location || '';
     document.getElementById('server-port').value = config.server_port || 8080;
 }
 
 function saveSettings() {
     config.device_name = document.getElementById('device-name').value.trim();
+    config.location = document.getElementById('device-location').value.trim();
     config.server_port = parseInt(document.getElementById('server-port').value);
 
     saveConfig().then(success => {
         if (success) {
-            showNotification('Settings saved. Note: Server port changes require restart.', 'success');
+            showNotification('Settings saved. Note: Server port and location changes require restart.', 'success');
         }
     });
 }
