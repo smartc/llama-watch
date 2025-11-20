@@ -1,4 +1,21 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Deserialize a boolean from various string representations (case-insensitive)
+/// Handles "true", "false", "True", "False", "TRUE", "FALSE", "1", "0"
+fn deserialize_bool_from_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Err(serde::de::Error::custom(format!(
+            "expected boolean string, got '{}'",
+            s
+        ))),
+    }
+}
 
 /// Non-standard structured comments for safety status details
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +102,7 @@ pub struct ConnectedRequest {
     pub client_i_d: u32,
     #[serde(default)]
     pub client_transaction_i_d: u32,
+    #[serde(deserialize_with = "deserialize_bool_from_string")]
     pub connected: bool,
 }
 
