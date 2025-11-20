@@ -23,11 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tabName = window.location.hash.substring(1);
         const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'settings'];
         if (validTabs.includes(tabName)) {
-            // Find and click the appropriate tab button
-            const tabButton = document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`);
-            if (tabButton) {
-                tabButton.click();
-            }
+            switchTab(tabName);
         }
     }
 });
@@ -37,14 +33,20 @@ function switchTab(tabName) {
     // Update tab buttons
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
+        // Find the button for this tab by checking its onclick attribute
+        if (tab.getAttribute('onclick') === `switchTab('${tabName}')`) {
+            tab.classList.add('active');
+        }
     });
-    event.target.classList.add('active');
 
     // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
     document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Update URL hash without triggering navigation
+    history.replaceState(null, null, `#${tabName}`);
 }
 
 // Load configuration
