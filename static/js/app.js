@@ -109,7 +109,10 @@ async function refreshStatus() {
 
         // Update banner
         const banner = document.getElementById('status-banner');
-        if (status.is_safe) {
+        if (!status.is_connected) {
+            banner.className = 'status-banner status-disconnected';
+            banner.innerHTML = '⚡ DISCONNECTED - ASCOM device not connected. <span style="font-size: 0.85em; opacity: 0.9;">Clients must call PUT /connected to enable.</span>';
+        } else if (status.is_safe) {
             banner.className = 'status-banner status-safe';
             banner.textContent = '✓ SAFE - All monitors reporting safe conditions';
         } else {

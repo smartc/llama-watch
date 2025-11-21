@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use tokio_util::io::ReaderStream;
 
 use crate::{
+    alpaca::safety_monitor::SafetyMonitor,
     config::{models::AppConfig, save_config},
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
@@ -21,6 +22,7 @@ pub struct WebState {
     pub config: SharedConfig,
     pub monitor_state: Arc<RwLock<MonitorState>>,
     pub debug_logger: Arc<DebugLogger>,
+    pub safety_monitor: Arc<SafetyMonitor>,
 }
 
 pub type SharedWebState = Arc<WebState>;
@@ -70,6 +72,9 @@ pub async fn get_status(
 
     let mut statuses = monitor_state.get_all_statuses();
     let is_safe = monitor_state.is_safe();
+
+    // Get ASCOM connected status
+    let is_connected = state.safety_monitor.is_connected(&state.monitor_state).await;
 
     // Add disabled monitors from config (they won't be in active monitor state)
     let mut active_ids: std::collections::HashSet<String> = statuses
@@ -125,6 +130,7 @@ pub async fn get_status(
 
     Json(serde_json::json!({
         "is_safe": is_safe,
+        "is_connected": is_connected,
         "monitors": statuses,
     }))
 }

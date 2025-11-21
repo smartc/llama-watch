@@ -91,6 +91,7 @@ async fn main() -> Result<()> {
         config: Arc::new(RwLock::new(config)),
         monitor_state: shared_monitor_state.clone(),
         debug_logger: debug_logger.clone(),
+        safety_monitor: safety_monitor.clone(),
     });
 
     // Start periodic status logging task

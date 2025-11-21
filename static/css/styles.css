@@ -65,6 +65,11 @@ body {
     color: white;
 }
 
+.status-disconnected {
+    background: #ff9800;
+    color: white;
+}
+
 .content {
     padding: 30px;
 }
