@@ -5,7 +5,14 @@ let config = {
     alpaca_monitors: {},
     server_port: 8080,
     device_name: "LLAMA Safety Monitor",
-    location: ""
+    location: "",
+    logging_enabled: false
+};
+
+let loggingStatus = {
+    enabled: false,
+    current_file: "",
+    files: []
 };
 
 let currentEditId = null;
@@ -23,6 +30,7 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await refreshStatus();
+    await loadLoggingStatus();
     // Auto-refresh status every 5 seconds
     setInterval(refreshStatus, 5000);
 
@@ -635,6 +643,83 @@ function saveSettings() {
             showNotification('Settings saved. Note: Server port and location changes require restart.', 'success');
         }
     });
+}
+
+// Logging
+async function loadLoggingStatus() {
+    try {
+        const response = await fetch('/api/logging/status');
+        loggingStatus = await response.json();
+        renderLoggingStatus();
+    } catch (error) {
+        console.error('Failed to load logging status:', error);
+    }
+}
+
+function renderLoggingStatus() {
+    document.getElementById('logging-enabled').checked = loggingStatus.enabled;
+
+    const container = document.getElementById('log-files-list');
+
+    if (loggingStatus.files.length === 0) {
+        container.innerHTML = '<p style="color: #999; font-size: 0.9em;">No log files available</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <h4 style="margin: 0 0 10px 0; font-size: 0.95em;">Available Log Files:</h4>
+        <div class="list-container" style="max-height: 200px; overflow-y: auto;">
+            ${loggingStatus.files.map(file => {
+                const sizeKB = (file.size / 1024).toFixed(1);
+                const modified = file.modified ? new Date(file.modified).toLocaleString() : 'Unknown';
+                const isCurrent = file.filename === loggingStatus.current_file;
+                return `
+                    <div class="list-item" style="padding: 8px;">
+                        <div class="list-item-info" style="font-size: 0.85em;">
+                            <strong>${escapeHtml(file.filename)}</strong>${isCurrent ? ' (current)' : ''}<br>
+                            Size: ${sizeKB} KB, Modified: ${modified}
+                        </div>
+                        <div class="list-item-actions">
+                            <button class="btn btn-primary" style="font-size: 0.8em; padding: 4px 8px;" onclick="downloadLogFile('${escapeHtml(file.filename)}')">Download</button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+async function toggleLogging(enabled) {
+    try {
+        const response = await fetch('/api/logging/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+
+        if (response.ok) {
+            showNotification(`Logging ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            await loadLoggingStatus();
+        } else {
+            const error = await response.text();
+            showNotification(`Failed to toggle logging: ${error}`, 'error');
+            // Revert checkbox
+            document.getElementById('logging-enabled').checked = !enabled;
+        }
+    } catch (error) {
+        showNotification('Failed to toggle logging', 'error');
+        console.error(error);
+        // Revert checkbox
+        document.getElementById('logging-enabled').checked = !enabled;
+    }
+}
+
+function downloadCurrentLog() {
+    window.location.href = '/api/logging/download';
+}
+
+function downloadLogFile(filename) {
+    window.location.href = `/api/logging/download/${encodeURIComponent(filename)}`;
 }
 
 // Utilities

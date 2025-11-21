@@ -264,6 +264,21 @@
                 </div>
 
                 <div class="section">
+                    <h2>Debug Logging</h2>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="logging-enabled" onchange="toggleLogging(this.checked)">
+                            <span>Enable Debug Logging</span>
+                        </label>
+                        <div class="info-text">Log monitor state changes and periodic status to file. Logs rotate daily at 4 PM and are kept for 7 days.</div>
+                    </div>
+                    <div id="logging-controls" style="margin-top: 15px;">
+                        <button class="btn btn-primary" onclick="downloadCurrentLog()">Download Current Log</button>
+                        <div id="log-files-list" style="margin-top: 15px;"></div>
+                    </div>
+                </div>
+
+                <div class="section">
                     <h2>Actions</h2>
                     <button class="btn btn-primary" onclick="refreshStatus()">Refresh Status</button>
                     <p class="info-text" style="margin-top: 15px;">

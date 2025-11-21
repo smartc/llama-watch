@@ -91,6 +91,8 @@ pub struct AppConfig {
     pub device_name: String,
     #[serde(default)]
     pub location: String,
+    #[serde(default)]
+    pub logging_enabled: bool,
 }
 
 impl Default for ComparisonOperator {
@@ -108,6 +110,7 @@ impl AppConfig {
             server_port: 8080,
             device_name: "LLAMA Safety Monitor".to_string(),
             location: String::new(),
+            logging_enabled: false,
         }
     }
 
