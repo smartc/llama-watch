@@ -120,6 +120,17 @@ async function refreshStatus() {
             banner.textContent = '⚠ UNSAFE - One or more monitors reporting unsafe conditions';
         }
 
+        // Update connection status indicator
+        const connectionStatus = document.getElementById('connection-status');
+        const connectionText = connectionStatus.querySelector('.connection-text');
+        if (status.is_connected) {
+            connectionStatus.className = 'connection-status connected';
+            connectionText.textContent = 'Connected - ASCOM clients can query safety status';
+        } else {
+            connectionStatus.className = 'connection-status disconnected';
+            connectionText.textContent = 'Disconnected - Clients must call PUT /api/v1/safetymonitor/0/connected to enable';
+        }
+
         // Update status list
         renderMonitorStatus(status.monitors);
     } catch (error) {
