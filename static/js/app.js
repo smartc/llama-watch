@@ -123,12 +123,17 @@ async function refreshStatus() {
         // Update connection status indicator
         const connectionStatus = document.getElementById('connection-status');
         const connectionText = connectionStatus.querySelector('.connection-text');
+        const connectionBtn = document.getElementById('connection-toggle-btn');
         if (status.is_connected) {
             connectionStatus.className = 'connection-status connected';
             connectionText.textContent = 'Connected - ASCOM clients can query safety status';
+            connectionBtn.textContent = 'Disconnect';
+            connectionBtn.className = 'btn btn-danger connection-toggle';
         } else {
             connectionStatus.className = 'connection-status disconnected';
-            connectionText.textContent = 'Disconnected - Clients must call PUT /api/v1/safetymonitor/0/connected to enable';
+            connectionText.textContent = 'Disconnected - Click Connect to enable ASCOM queries';
+            connectionBtn.textContent = 'Connect';
+            connectionBtn.className = 'btn btn-success connection-toggle';
         }
 
         // Update status list
@@ -734,6 +739,33 @@ function downloadCurrentLog() {
 
 function downloadLogFile(filename) {
     window.location.href = `/api/logging/download/${encodeURIComponent(filename)}`;
+}
+
+// Toggle ASCOM connection state
+async function toggleConnection() {
+    try {
+        // Get current state from the button text
+        const connectionBtn = document.getElementById('connection-toggle-btn');
+        const isCurrentlyConnected = connectionBtn.textContent === 'Disconnect';
+        const newState = !isCurrentlyConnected;
+
+        const response = await fetch('/api/v1/safetymonitor/0/connected', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `Connected=${newState}`
+        });
+
+        if (response.ok) {
+            showNotification(`ASCOM device ${newState ? 'connected' : 'disconnected'}`, 'success');
+            await refreshStatus();
+        } else {
+            const error = await response.text();
+            showNotification(`Failed to toggle connection: ${error}`, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to toggle connection', 'error');
+        console.error(error);
+    }
 }
 
 // Utilities

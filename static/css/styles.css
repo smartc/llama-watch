@@ -97,6 +97,12 @@ body {
     box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
 }
 
+.connection-toggle {
+    margin-left: auto;
+    padding: 8px 16px;
+    font-size: 0.9em;
+}
+
 .content {
     padding: 30px;
 }
