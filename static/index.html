@@ -41,6 +41,14 @@
             <!-- Status Tab -->
             <div id="tab-status" class="tab-content active">
                 <div class="section">
+                    <h2>ASCOM Device Status</h2>
+                    <div id="connection-status" class="connection-status">
+                        <span class="connection-indicator"></span>
+                        <span class="connection-text">Checking...</span>
+                        <button id="connection-toggle-btn" class="btn btn-primary connection-toggle" onclick="toggleConnection()">Connect</button>
+                    </div>
+                </div>
+                <div class="section">
                     <h2>Monitor Status</h2>
                     <div id="monitor-status-list"></div>
                 </div>
@@ -261,6 +269,21 @@
                         <div class="info-text">Port requires application restart to take effect</div>
                     </div>
                     <button class="btn btn-success" onclick="saveSettings()">Save Settings</button>
+                </div>
+
+                <div class="section">
+                    <h2>Debug Logging</h2>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="logging-enabled" onchange="toggleLogging(this.checked)">
+                            <span>Enable Debug Logging</span>
+                        </label>
+                        <div class="info-text">Log monitor state changes and periodic status to file. Logs rotate daily at 4 PM and are kept for 7 days.</div>
+                    </div>
+                    <div id="logging-controls" style="margin-top: 15px;">
+                        <button class="btn btn-primary" onclick="downloadCurrentLog()">Download Current Log</button>
+                        <div id="log-files-list" style="margin-top: 15px;"></div>
+                    </div>
                 </div>
 
                 <div class="section">

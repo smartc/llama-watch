@@ -1,5 +1,6 @@
 mod alpaca;
 mod config;
+mod logging;
 mod monitors;
 mod web;
 
@@ -8,12 +9,13 @@ mod web;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber;
 
 use alpaca::discovery::DiscoveryService;
 use alpaca::safety_monitor::{AppState, SafetyMonitor};
 use config::load_config;
+use logging::DebugLogger;
 use monitors::MonitorState;
 use web::handlers::WebState;
 
@@ -61,6 +63,19 @@ async fn main() -> Result<()> {
     let shared_monitor_state = Arc::new(RwLock::new(monitor_state));
 
     let location = config.location.clone();
+    let logging_enabled = config.logging_enabled;
+
+    // Create debug logger
+    let debug_logger = match DebugLogger::new(logging_enabled) {
+        Ok(logger) => {
+            info!("Debug logger initialized (enabled: {})", logging_enabled);
+            Arc::new(logger)
+        }
+        Err(e) => {
+            error!("Failed to initialize debug logger: {}", e);
+            return Err(e);
+        }
+    };
 
     // Create safety monitor
     let safety_monitor = Arc::new(SafetyMonitor::new(device_name, location));
@@ -75,6 +90,31 @@ async fn main() -> Result<()> {
     let web_state = Arc::new(WebState {
         config: Arc::new(RwLock::new(config)),
         monitor_state: shared_monitor_state.clone(),
+        debug_logger: debug_logger.clone(),
+        safety_monitor: safety_monitor.clone(),
+    });
+
+    // Start periodic status logging task
+    let periodic_monitor_state = shared_monitor_state.clone();
+    let periodic_logger = debug_logger.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+
+            let monitor_state = periodic_monitor_state.read().await;
+            let statuses = monitor_state.get_all_statuses();
+            let is_safe = monitor_state.is_safe();
+            drop(monitor_state);
+
+            // Log state changes and periodic status
+            if let Err(e) = periodic_logger.check_overall_state_change(is_safe, &statuses) {
+                warn!("Failed to log state change: {}", e);
+            }
+            if let Err(e) = periodic_logger.log_periodic_status(is_safe, &statuses) {
+                warn!("Failed to log periodic status: {}", e);
+            }
+        }
     });
 
     // Build router
