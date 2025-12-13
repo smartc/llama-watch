@@ -37,9 +37,9 @@ impl SafetyMonitor {
         self.server_transaction_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Check if device is truly connected (user-enabled AND monitors ready)
-    pub async fn is_connected(&self, monitor_state: &SharedMonitorState) -> bool {
-        *self.connected.read() && monitor_state.read().await.is_ready()
+    /// Check if device is connected (user toggled connection on)
+    pub async fn is_connected(&self, _monitor_state: &SharedMonitorState) -> bool {
+        *self.connected.read()
     }
 }
 
