@@ -14,7 +14,9 @@ use crate::{
     config::{models::AppConfig, save_config},
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
+    weather::{WeatherMonitorManager, ObservingConditionsDevice},
 };
+use std::collections::HashMap;
 
 pub type SharedConfig = Arc<RwLock<AppConfig>>;
 
@@ -23,6 +25,8 @@ pub struct WebState {
     pub monitor_state: Arc<RwLock<MonitorState>>,
     pub debug_logger: Arc<DebugLogger>,
     pub safety_monitor: Arc<SafetyMonitor>,
+    pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
+    pub weather_monitors: Arc<RwLock<WeatherMonitorManager>>,
 }
 
 pub type SharedWebState = Arc<WebState>;

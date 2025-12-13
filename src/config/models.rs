@@ -77,6 +77,14 @@ fn default_enabled() -> bool {
     true
 }
 
+fn default_server_interface() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_udp_port() -> u16 {
+    50222
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     #[serde(default)]
@@ -86,7 +94,13 @@ pub struct AppConfig {
     #[serde(default)]
     pub alpaca_monitors: HashMap<String, AlpacaMonitorConfig>,
     #[serde(default)]
+    pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Key is device_number
+    #[serde(default)]
     pub server_port: u16,
+    #[serde(default = "default_server_interface")]
+    pub server_interface: String, // IP address to bind to (e.g., "127.0.0.1" or "0.0.0.0")
+    #[serde(default = "default_udp_port")]
+    pub tempest_udp_port: u16, // Port for Tempest UDP broadcasts (default 50222)
     #[serde(default)]
     pub device_name: String,
     #[serde(default)]
@@ -107,7 +121,10 @@ impl AppConfig {
             mqtt_servers: HashMap::new(),
             mqtt_monitors: HashMap::new(),
             alpaca_monitors: HashMap::new(),
+            weather_devices: HashMap::new(),
             server_port: 8080,
+            server_interface: default_server_interface(),
+            tempest_udp_port: default_udp_port(),
             device_name: "LLAMA Safety Monitor".to_string(),
             location: String::new(),
             logging_enabled: false,
@@ -143,4 +160,64 @@ pub struct MonitorStatus {
     pub hold_time_seconds: u64,
     pub pending_is_safe: Option<bool>,
     pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+// Weather device configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeatherDeviceConfig {
+    pub device_number: u32,
+    pub name: String,
+    pub description: String,
+    pub source: WeatherDataSource,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool, // If true, device starts in connected state
+    #[serde(default)]
+    pub safety_thresholds: Option<WeatherSafetyThresholds>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum WeatherDataSource {
+    Tempest {
+        serial_number: Option<String>, // If None, accept any Tempest device
+    },
+    WeatherUnderground {
+        station_id: String,
+        api_key: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WeatherSafetyThresholds {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+    #[serde(default)]
+    pub hold_time_seconds: u64,
+    #[serde(default)]
+    pub temperature: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub humidity: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub sky_brightness: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub wind_speed: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub wind_gust: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub rain_rate: Option<ThresholdConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThresholdConfig {
+    pub threshold: f64,
+    pub operator: ComparisonOperator,
+    pub safe_when_true: bool,
+}
+
+fn default_auto_connect() -> bool {
+    true
 }

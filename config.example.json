@@ -1,0 +1,54 @@
+{
+  "mqtt_servers": {},
+  "mqtt_monitors": {},
+  "alpaca_monitors": {},
+  "weather_devices": {
+    "0": {
+      "device_number": 0,
+      "name": "Tempest Weather Station",
+      "description": "WeatherFlow Tempest all-in-one weather station",
+      "source": {
+        "type": "tempest",
+        "serial_number": null
+      },
+      "enabled": true,
+      "auto_connect": true,
+      "safety_thresholds": {
+        "enabled": true,
+        "timeout_seconds": 300,
+        "hold_time_seconds": 60,
+        "temperature": {
+          "threshold": -10.0,
+          "operator": "lessthan",
+          "safe_when_true": false
+        },
+        "humidity": {
+          "threshold": 85.0,
+          "operator": "greaterthan",
+          "safe_when_true": false
+        },
+        "wind_speed": {
+          "threshold": 15.0,
+          "operator": "greaterthan",
+          "safe_when_true": false
+        },
+        "wind_gust": {
+          "threshold": 20.0,
+          "operator": "greaterthan",
+          "safe_when_true": false
+        },
+        "rain_rate": {
+          "threshold": 0.1,
+          "operator": "greaterthan",
+          "safe_when_true": false
+        }
+      }
+    }
+  },
+  "server_port": 8080,
+  "server_interface": "127.0.0.1",
+  "tempest_udp_port": 50222,
+  "device_name": "LLAMA Weather & Safety Monitor",
+  "location": "Observatory",
+  "logging_enabled": true
+}
