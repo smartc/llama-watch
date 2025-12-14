@@ -492,3 +492,75 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Weather device threshold sections */
+.threshold-section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+}
+
+.threshold-section > label.checkbox-group {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.threshold-fields {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Badge styles for weather device list */
+.badge-tempest {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.badge-weatherunderground {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+/* Weather measurements grid */
+.measurements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.measurement {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 10px;
+    border-left: 3px solid;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.measurement.safe {
+    border-left-color: #10b981;
+}
+
+.measurement.unsafe {
+    border-left-color: #ef4444;
+}
+
+.measurement-name {
+    font-weight: 600;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.measurement-value {
+    font-size: 1.2em;
+    font-weight: 700;
+    color: #fff;
+}
+
+.measurement-threshold {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.6);
+}

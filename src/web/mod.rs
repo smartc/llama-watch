@@ -1,7 +1,7 @@
 pub mod handlers;
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use handlers::SharedWebState;
@@ -19,6 +19,12 @@ pub fn create_router(state: SharedWebState) -> Router {
         .route("/api/logging/files", get(handlers::list_log_files))
         .route("/api/logging/download", get(handlers::download_current_log))
         .route("/api/logging/download/:filename", get(handlers::download_log_file))
+        // Weather device endpoints
+        .route("/api/weather/devices", get(handlers::get_weather_devices).post(handlers::create_weather_device))
+        .route("/api/weather/devices/:id", get(handlers::get_weather_device).put(handlers::update_weather_device).delete(handlers::delete_weather_device))
+        .route("/api/weather/devices/:id/toggle", post(handlers::toggle_weather_device))
+        .route("/api/weather/devices/:id/connect", post(handlers::set_weather_device_connection))
+        .route("/api/weather/status", get(handlers::get_weather_status))
         .nest_service("/", ServeDir::new("static"))
         .with_state(state)
 }

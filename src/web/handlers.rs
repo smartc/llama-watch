@@ -353,3 +353,253 @@ pub async fn download_current_log(
 
     Ok(response)
 }
+
+// Weather Device API endpoints
+
+use crate::config::models::{WeatherDeviceConfig, WeatherDataSource, WeatherSafetyThresholds};
+use crate::weather::weather_monitor::WeatherMonitorStatus;
+
+#[derive(Serialize)]
+pub struct WeatherDeviceResponse {
+    pub device_number: u32,
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+    pub auto_connect: bool,
+    pub connected: bool,
+    pub source_type: String,
+    pub has_safety_thresholds: bool,
+    pub safety_enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct WeatherStatusResponse {
+    pub device_number: u32,
+    pub name: String,
+    pub is_safe: bool,
+    pub enabled: bool,
+    pub last_update: Option<String>,
+    pub error: Option<String>,
+    pub measurements: HashMap<String, MeasurementInfo>,
+}
+
+#[derive(Serialize)]
+pub struct MeasurementInfo {
+    pub name: String,
+    pub value: f64,
+    pub threshold: f64,
+    pub is_safe: bool,
+}
+
+// GET /api/weather/devices - List all weather devices
+pub async fn get_weather_devices(
+    State(state): State<SharedWebState>,
+) -> Json<Vec<WeatherDeviceResponse>> {
+    let config = state.config.read().await;
+    let oc_devices = state.oc_devices.read().await;
+
+    let mut devices = Vec::new();
+    for (device_number, device_config) in &config.weather_devices {
+        let connected = oc_devices.get(device_number)
+            .map(|d| d.is_connected())
+            .unwrap_or(false);
+
+        let source_type = match &device_config.source {
+            WeatherDataSource::Tempest { .. } => "tempest".to_string(),
+            WeatherDataSource::WeatherUnderground { .. } => "weatherunderground".to_string(),
+        };
+
+        devices.push(WeatherDeviceResponse {
+            device_number: *device_number,
+            name: device_config.name.clone(),
+            description: device_config.description.clone(),
+            enabled: device_config.enabled,
+            auto_connect: device_config.auto_connect,
+            connected,
+            source_type,
+            has_safety_thresholds: device_config.safety_thresholds.is_some(),
+            safety_enabled: device_config.safety_thresholds.as_ref()
+                .map(|t| t.enabled)
+                .unwrap_or(false),
+        });
+    }
+
+    devices.sort_by_key(|d| d.device_number);
+    Json(devices)
+}
+
+// GET /api/weather/devices/:id - Get specific weather device
+pub async fn get_weather_device(
+    Path(device_number): Path<u32>,
+    State(state): State<SharedWebState>,
+) -> Result<Json<WeatherDeviceConfig>, (StatusCode, String)> {
+    let config = state.config.read().await;
+
+    match config.weather_devices.get(&device_number) {
+        Some(device) => Ok(Json(device.clone())),
+        None => Err((StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number))),
+    }
+}
+
+// POST /api/weather/devices - Create new weather device
+pub async fn create_weather_device(
+    State(state): State<SharedWebState>,
+    Json(device_config): Json<WeatherDeviceConfig>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if device already exists
+    if config.weather_devices.contains_key(&device_config.device_number) {
+        return Err((StatusCode::CONFLICT, format!("Weather device {} already exists", device_config.device_number)));
+    }
+
+    // Add device to config
+    config.weather_devices.insert(device_config.device_number, device_config.clone());
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // TODO: Reload weather devices without restarting service
+
+    Ok(StatusCode::CREATED)
+}
+
+// PUT /api/weather/devices/:id - Update weather device
+pub async fn update_weather_device(
+    Path(device_number): Path<u32>,
+    State(state): State<SharedWebState>,
+    Json(device_config): Json<WeatherDeviceConfig>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if device exists
+    if !config.weather_devices.contains_key(&device_number) {
+        return Err((StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number)));
+    }
+
+    // Ensure device number matches
+    if device_config.device_number != device_number {
+        return Err((StatusCode::BAD_REQUEST, "Device number mismatch".to_string()));
+    }
+
+    // Update device in config
+    config.weather_devices.insert(device_number, device_config.clone());
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Update OC device if it exists
+    let mut oc_devices = state.oc_devices.write().await;
+    if let Some(device) = oc_devices.get(&device_number) {
+        device.update_config(device_config);
+    }
+
+    // TODO: Reload weather monitors without restarting service
+
+    Ok(StatusCode::OK)
+}
+
+// DELETE /api/weather/devices/:id - Delete weather device
+pub async fn delete_weather_device(
+    Path(device_number): Path<u32>,
+    State(state): State<SharedWebState>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if device exists
+    if !config.weather_devices.contains_key(&device_number) {
+        return Err((StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number)));
+    }
+
+    // Remove device from config
+    config.weather_devices.remove(&device_number);
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // TODO: Remove OC device and weather monitor
+
+    Ok(StatusCode::OK)
+}
+
+// POST /api/weather/devices/:id/toggle - Toggle device enabled state
+pub async fn toggle_weather_device(
+    Path(device_number): Path<u32>,
+    State(state): State<SharedWebState>,
+    Json(req): Json<ToggleEnabledRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if device exists
+    let device_config = config.weather_devices.get_mut(&device_number)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number)))?;
+
+    device_config.enabled = req.enabled;
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // TODO: Enable/disable device without restarting service
+
+    Ok(StatusCode::OK)
+}
+
+// GET /api/weather/status - Get weather monitor safety statuses
+pub async fn get_weather_status(
+    State(state): State<SharedWebState>,
+) -> Json<Vec<WeatherStatusResponse>> {
+    let weather_monitors = state.weather_monitors.read().await;
+    let statuses = weather_monitors.get_all_statuses().await;
+
+    let mut response = Vec::new();
+    for (device_number, status) in statuses {
+        let measurements = status.measurements.iter().map(|(k, v)| {
+            (k.clone(), MeasurementInfo {
+                name: v.name.clone(),
+                value: v.value,
+                threshold: v.threshold,
+                is_safe: v.is_safe,
+            })
+        }).collect();
+
+        response.push(WeatherStatusResponse {
+            device_number,
+            name: status.name.clone(),
+            is_safe: status.is_safe,
+            enabled: status.enabled,
+            last_update: status.last_update.map(|dt| dt.to_rfc3339()),
+            error: status.error.clone(),
+            measurements,
+        });
+    }
+
+    response.sort_by_key(|s| s.device_number);
+    Json(response)
+}
+
+// POST /api/weather/devices/:id/connect - Connect/disconnect device
+pub async fn set_weather_device_connection(
+    Path(device_number): Path<u32>,
+    State(state): State<SharedWebState>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let connected = req.get("connected")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing 'connected' field".to_string()))?;
+
+    let oc_devices = state.oc_devices.read().await;
+    let device = oc_devices.get(&device_number)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number)))?;
+
+    device.set_connected(connected);
+
+    Ok(StatusCode::OK)
+}
