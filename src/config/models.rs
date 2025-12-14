@@ -216,6 +216,8 @@ pub struct ThresholdConfig {
     pub threshold: f64,
     pub operator: ComparisonOperator,
     pub safe_when_true: bool,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>, // Per-measurement timeout (overrides global if set)
 }
 
 fn default_auto_connect() -> bool {

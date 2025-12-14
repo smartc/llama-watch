@@ -564,3 +564,14 @@ body {
     font-size: 0.75em;
     color: rgba(255, 255, 255, 0.6);
 }
+
+.monitor-info {
+    display: flex;
+    gap: 16px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.monitor-info span {
+    white-space: nowrap;
+}

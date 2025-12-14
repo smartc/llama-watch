@@ -30,6 +30,8 @@ pub struct MeasurementStatus {
     pub value: f64,
     pub threshold: f64,
     pub is_safe: bool,
+    pub timeout_seconds: Option<u64>,
+    pub last_update: Option<DateTime<Utc>>,
 }
 
 /// Individual weather monitor
@@ -143,6 +145,8 @@ impl WeatherMonitor {
         let mut measurements = HashMap::new();
         let mut all_safe = true;
 
+        let now = obs.timestamp;
+
         // Temperature
         if let Some(threshold) = &thresholds.temperature {
             if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::TEMPERATURE, previous_obs.as_ref()) {
@@ -153,6 +157,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
@@ -167,6 +173,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
@@ -181,6 +189,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
@@ -195,6 +205,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
@@ -209,6 +221,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
@@ -223,6 +237,8 @@ impl WeatherMonitor {
                     value,
                     threshold: threshold.threshold,
                     is_safe,
+                    timeout_seconds: threshold.timeout_seconds,
+                    last_update: Some(now),
                 });
             }
         }
