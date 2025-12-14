@@ -14,7 +14,7 @@ use crate::{
     config::{models::AppConfig, save_config},
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
-    weather::{WeatherMonitorManager, ObservingConditionsDevice},
+    weather::{WeatherMonitorManager, ObservingConditionsDevice, tempest::TempestData},
 };
 use std::collections::HashMap;
 
@@ -27,6 +27,7 @@ pub struct WebState {
     pub safety_monitor: Arc<SafetyMonitor>,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
     pub weather_monitors: Arc<RwLock<WeatherMonitorManager>>,
+    pub tempest_data: Arc<RwLock<TempestData>>,
 }
 
 pub type SharedWebState = Arc<WebState>;
@@ -461,7 +462,25 @@ pub async fn create_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
-    // TODO: Reload weather devices without restarting service
+    // Release config lock before acquiring other locks
+    drop(config);
+
+    // Create ObservingConditions device if enabled
+    if device_config.enabled {
+        let device = Arc::new(ObservingConditionsDevice::new(device_config.clone()));
+        let mut oc_devices = state.oc_devices.write().await;
+        oc_devices.insert(device_config.device_number, device);
+    }
+
+    // Reinitialize weather monitor for this device if safety thresholds are enabled
+    if let Some(ref thresholds) = device_config.safety_thresholds {
+        if thresholds.enabled {
+            let mut weather_monitors = state.weather_monitors.write().await;
+            let mut devices_map = HashMap::new();
+            devices_map.insert(device_config.device_number, device_config.clone());
+            weather_monitors.initialize(&devices_map, state.tempest_data.clone()).await;
+        }
+    }
 
     Ok(StatusCode::CREATED)
 }
@@ -492,13 +511,30 @@ pub async fn update_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
-    // Update OC device if it exists
+    // Release config lock before acquiring other locks
+    drop(config);
+
+    // Update or create OC device
     let mut oc_devices = state.oc_devices.write().await;
     if let Some(device) = oc_devices.get(&device_number) {
-        device.update_config(device_config);
+        // Update existing device
+        device.update_config(device_config.clone());
+    } else if device_config.enabled {
+        // Create new device if it doesn't exist and is enabled
+        let device = Arc::new(ObservingConditionsDevice::new(device_config.clone()));
+        oc_devices.insert(device_number, device);
     }
+    drop(oc_devices);
 
-    // TODO: Reload weather monitors without restarting service
+    // Reinitialize weather monitor for this device if safety thresholds are enabled
+    if let Some(ref thresholds) = device_config.safety_thresholds {
+        if thresholds.enabled {
+            let mut weather_monitors = state.weather_monitors.write().await;
+            let mut devices_map = HashMap::new();
+            devices_map.insert(device_number, device_config.clone());
+            weather_monitors.initialize(&devices_map, state.tempest_data.clone()).await;
+        }
+    }
 
     Ok(StatusCode::OK)
 }
@@ -523,7 +559,17 @@ pub async fn delete_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
-    // TODO: Remove OC device and weather monitor
+    // Release config lock before acquiring other locks
+    drop(config);
+
+    // Remove ObservingConditions device
+    let mut oc_devices = state.oc_devices.write().await;
+    oc_devices.remove(&device_number);
+    drop(oc_devices);
+
+    // Remove weather monitor for this device
+    let mut weather_monitors = state.weather_monitors.write().await;
+    weather_monitors.remove_monitor(device_number).await;
 
     Ok(StatusCode::OK)
 }

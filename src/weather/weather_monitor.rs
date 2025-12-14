@@ -333,6 +333,14 @@ impl WeatherMonitorManager {
         self.monitors.clear();
     }
 
+    pub async fn remove_monitor(&mut self, device_number: u32) {
+        if let Some(task) = self.tasks.remove(&device_number) {
+            task.abort();
+        }
+        self.monitors.remove(&device_number);
+        info!("Removed weather safety monitor for device {}", device_number);
+    }
+
     pub fn get_monitor(&self, device_number: u32) -> Option<&Arc<WeatherMonitor>> {
         self.monitors.get(&device_number)
     }

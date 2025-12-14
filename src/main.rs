@@ -147,6 +147,7 @@ async fn main() -> Result<()> {
         safety_monitor: safety_monitor.clone(),
         oc_devices: oc_devices_shared.clone(),
         weather_monitors: shared_weather_monitors.clone(),
+        tempest_data: tempest_data.clone(),
     });
 
     // Start periodic status logging task
