@@ -346,6 +346,17 @@ pub async fn get_sensordescription(
     };
 
     let server_id = dev.next_transaction_id();
+
+    // Check if property is supported - if not, return NotImplementedException
+    if !is_property_supported(&params.sensor_name) {
+        return Json(AlpacaResponse::<String>::error(
+            params.client_transaction_i_d,
+            server_id,
+            ERROR_NOT_IMPLEMENTED,
+            format!("Property '{}' is not implemented", params.sensor_name),
+        )).into_response();
+    }
+
     let description = get_sensor_description(&params.sensor_name);
 
     Json(AlpacaResponse::success(
@@ -392,6 +403,58 @@ pub async fn get_timesincelastupdate(
     }
 
     let config = dev.get_config();
+
+    // Special case: empty string means "time since most recent update of ANY sensor"
+    if params.sensor_name.is_empty() {
+        // Get the minimum time across all supported sensors (minimum = most recent)
+        let supported_sensors = vec![
+            ObservingConditionsProperties::DEW_POINT,
+            ObservingConditionsProperties::HUMIDITY,
+            ObservingConditionsProperties::PRESSURE,
+            ObservingConditionsProperties::RAIN_RATE,
+            ObservingConditionsProperties::SKY_BRIGHTNESS,
+            ObservingConditionsProperties::TEMPERATURE,
+            ObservingConditionsProperties::WIND_DIRECTION,
+            ObservingConditionsProperties::WIND_GUST,
+            ObservingConditionsProperties::WIND_SPEED,
+        ];
+
+        let mut min_time = None;
+        for sensor in supported_sensors {
+            if let Some(t) = state.weather_data.time_since_last_update(&config, sensor).await {
+                min_time = Some(min_time.map_or(t, |current| f64::min(current, t)));
+            }
+        }
+
+        let time_since = match min_time {
+            Some(t) => t,
+            None => {
+                return Json(AlpacaResponse::<f64>::error(
+                    params.client_transaction_i_d,
+                    server_id,
+                    ERROR_INVALID_OPERATION,
+                    "No weather data available".to_string(),
+                )).into_response();
+            }
+        };
+
+        return Json(AlpacaResponse::success(
+            time_since,
+            params.client_transaction_i_d,
+            server_id,
+        )).into_response();
+    }
+
+    // Check if property is supported - if not, return NotImplementedException
+    if !is_property_supported(&params.sensor_name) {
+        return Json(AlpacaResponse::<f64>::error(
+            params.client_transaction_i_d,
+            server_id,
+            ERROR_NOT_IMPLEMENTED,
+            format!("Property '{}' is not implemented", params.sensor_name),
+        )).into_response();
+    }
+
     let time_since = match state.weather_data.time_since_last_update(&config, &params.sensor_name).await {
         Some(t) => t,
         None => {
@@ -415,7 +478,7 @@ pub async fn get_timesincelastupdate(
 pub async fn put_refresh(
     Path(device): Path<u32>,
     State(state): State<SharedObservingConditionsState>,
-    AlpacaForm(req): AlpacaForm<ConnectedRequest>,
+    AlpacaForm(params): AlpacaForm<QueryParams>,
 ) -> Response {
     let dev = match get_device(&state.devices, device).await {
         Ok(d) => d,
@@ -429,7 +492,7 @@ pub async fn put_refresh(
     // Refresh is a no-op for us since we continuously receive UDP data
     Json(AlpacaResponse::success(
         (),
-        req.client_transaction_i_d,
+        params.client_transaction_i_d,
         server_id,
     )).into_response()
 }

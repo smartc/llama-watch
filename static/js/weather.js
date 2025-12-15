@@ -313,24 +313,41 @@ async function loadWeatherStatus() {
 function renderWeatherStatus(statuses) {
     const container = document.getElementById('weather-status-list');
     if (!container) return;
-    
+
     if (statuses.length === 0) {
         container.innerHTML = '<p class="no-data">No weather devices with safety monitoring configured.</p>';
         return;
     }
-    
+
+    // Define consistent measurement order
+    const measurementOrder = [
+        'temperature',
+        'humidity',
+        'dew_point',
+        'pressure',
+        'wind_speed',
+        'wind_gust',
+        'wind_direction',
+        'rain_rate',
+        'sky_brightness'
+    ];
+
     container.innerHTML = statuses.map(status => {
         const statusClass = status.is_safe ? 'safe' : 'unsafe';
         const statusText = status.is_safe ? 'SAFE' : 'UNSAFE';
-        const lastUpdate = status.last_update 
+        const lastUpdate = status.last_update
             ? new Date(status.last_update).toLocaleString()
             : 'Never';
-        
+
         let measurementsHtml = '';
-        const measurements = Object.values(status.measurements);
-        if (measurements.length > 0) {
+        // Sort measurements by the defined order
+        const sortedMeasurements = measurementOrder
+            .map(key => status.measurements[key])
+            .filter(m => m !== undefined);
+
+        if (sortedMeasurements.length > 0) {
             measurementsHtml = '<div class="measurements-grid">' +
-                measurements.map(m => {
+                sortedMeasurements.map(m => {
                     const mClass = m.is_safe ? 'safe' : 'unsafe';
                     return '<div class="measurement ' + mClass + '">' +
                         '<span class="measurement-name">' + m.name + '</span>' +

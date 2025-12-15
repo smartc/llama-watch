@@ -604,35 +604,129 @@ pub async fn toggle_weather_device(
 pub async fn get_weather_status(
     State(state): State<SharedWebState>,
 ) -> Json<Vec<WeatherStatusResponse>> {
+    use crate::config::models::WeatherDataSource;
+
+    let config = state.config.read().await;
     let weather_monitors = state.weather_monitors.read().await;
+    let tempest_data = state.tempest_data.read().await;
     let statuses = weather_monitors.get_all_statuses().await;
 
     let mut response = Vec::new();
-    for (device_number, status) in statuses {
-        let measurements = status.measurements.iter().map(|(k, v)| {
-            (k.clone(), MeasurementInfo {
-                name: v.name.clone(),
-                value: v.value,
-                threshold: v.threshold,
-                is_safe: v.is_safe,
-                timeout_seconds: v.timeout_seconds,
-                last_update: v.last_update.map(|dt| dt.to_rfc3339()),
-            })
-        }).collect();
+
+    // Process each configured weather device
+    for (device_number, device_config) in &config.weather_devices {
+        if !device_config.enabled {
+            continue; // Skip disabled devices
+        }
+
+        // Get actual weather observation data
+        let observation = match &device_config.source {
+            WeatherDataSource::Tempest { serial_number } => {
+                if let Some(sn) = serial_number {
+                    tempest_data.observations.get(sn).cloned()
+                } else {
+                    tempest_data.observations.values().next().cloned()
+                }
+            }
+            WeatherDataSource::WeatherUnderground { .. } => None,
+        };
+
+        // Get safety monitoring status for this device (if exists)
+        let safety_status = statuses.get(device_number);
+
+        let mut measurements = HashMap::new();
+
+        if let Some(ref obs) = observation {
+            let last_update_str = obs.timestamp.to_rfc3339();
+
+            // Helper function to add a measurement
+            let mut add_measurement = |key: &str, name: &str, value: f64| {
+                // Check if this measurement is being monitored for safety
+                let (threshold, is_safe, timeout_seconds) = if let Some(status) = safety_status {
+                    if let Some(m) = status.measurements.get(key) {
+                        (m.threshold, m.is_safe, m.timeout_seconds)
+                    } else {
+                        (0.0, true, None) // Not monitored
+                    }
+                } else {
+                    (0.0, true, None) // No safety monitoring
+                };
+
+                measurements.insert(key.to_string(), MeasurementInfo {
+                    name: name.to_string(),
+                    value,
+                    threshold,
+                    is_safe,
+                    timeout_seconds,
+                    last_update: Some(last_update_str.clone()),
+                });
+            };
+
+            // Add all available measurements
+            add_measurement("temperature", "Temperature (°C)", obs.temperature);
+            add_measurement("humidity", "Humidity (%)", obs.humidity);
+            add_measurement("pressure", "Pressure (MB)", obs.pressure);
+            add_measurement("wind_speed", "Wind Speed (m/s)", obs.wind_avg);
+            add_measurement("wind_gust", "Wind Gust (m/s)", obs.wind_gust);
+            add_measurement("wind_direction", "Wind Direction (°)", obs.wind_direction);
+
+            // Calculate rain rate (mm/hour)
+            let rain_rate = if let Some(prev_obs) = tempest_data.previous_observations.get(&obs.serial_number) {
+                obs.calculate_rain_rate(Some(prev_obs))
+            } else {
+                0.0
+            };
+            add_measurement("rain_rate", "Rain Rate (mm/hr)", rain_rate);
+
+            // Calculate dew point
+            let dew_point = calculate_dew_point(obs.temperature, obs.humidity);
+            add_measurement("dew_point", "Dew Point (°C)", dew_point);
+
+            // Convert illuminance to sky brightness (mag/arcsec²)
+            let sky_brightness = lux_to_sky_brightness(obs.illuminance);
+            add_measurement("sky_brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
+        }
+
+        // Determine overall safety status
+        let (is_safe, error) = if let Some(status) = safety_status {
+            (status.is_safe, status.error.clone())
+        } else {
+            (true, None) // No safety monitoring = always safe
+        };
+
+        let last_update = observation.as_ref()
+            .map(|obs| obs.timestamp.to_rfc3339());
 
         response.push(WeatherStatusResponse {
-            device_number,
-            name: status.name.clone(),
-            is_safe: status.is_safe,
-            enabled: status.enabled,
-            last_update: status.last_update.map(|dt| dt.to_rfc3339()),
-            error: status.error.clone(),
+            device_number: *device_number,
+            name: device_config.name.clone(),
+            is_safe,
+            enabled: device_config.enabled,
+            last_update,
+            error,
             measurements,
         });
     }
 
     response.sort_by_key(|s| s.device_number);
     Json(response)
+}
+
+// Helper function to calculate dew point from temperature and humidity
+fn calculate_dew_point(temp_c: f64, humidity: f64) -> f64 {
+    let a = 17.27;
+    let b = 237.7;
+    let alpha = ((a * temp_c) / (b + temp_c)) + (humidity / 100.0).ln();
+    (b * alpha) / (a - alpha)
+}
+
+// Helper function to convert lux to sky brightness (mag/arcsec²)
+fn lux_to_sky_brightness(lux: f64) -> f64 {
+    if lux <= 0.0 {
+        return 22.0; // Very dark sky
+    }
+    // Empirical conversion: mag/arcsec² = 22.0 - 2.5 * log10(lux)
+    22.0 - 2.5 * lux.log10()
 }
 
 // POST /api/weather/devices/:id/connect - Connect/disconnect device

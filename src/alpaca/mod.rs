@@ -27,6 +27,11 @@ pub fn create_management_router(state: SharedManagementState) -> Router {
     Router::new()
         // Setup pages (redirects to web UI)
         .route("/setup", get(setup_main))
+        // API versions endpoint (root level for ASCOM discovery)
+        .route(
+            "/api/apiversions",
+            get(management::get_api_versions),
+        )
         // Management API endpoints
         .route(
             "/management/apiversions",
