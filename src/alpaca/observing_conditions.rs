@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{Json, IntoResponse, Response},
 };
+use super::case_insensitive::CaseInsensitiveQuery;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -329,13 +330,14 @@ pub struct SensorDescriptionQuery {
     #[serde(default)]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
+    #[serde(default)]
     #[serde(rename = "SensorName")]
     pub sensor_name: String,
 }
 
 pub async fn get_sensordescription(
     Path(device): Path<u32>,
-    Query(params): Query<SensorDescriptionQuery>,
+    CaseInsensitiveQuery(params): CaseInsensitiveQuery<SensorDescriptionQuery>,
     State(state): State<SharedObservingConditionsState>,
 ) -> Response {
     let dev = match get_device(&state.devices, device).await {
@@ -375,13 +377,14 @@ pub struct TimeSinceQuery {
     #[serde(default)]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
+    #[serde(default)]
     #[serde(rename = "SensorName")]
     pub sensor_name: String,
 }
 
 pub async fn get_timesincelastupdate(
     Path(device): Path<u32>,
-    Query(params): Query<TimeSinceQuery>,
+    CaseInsensitiveQuery(params): CaseInsensitiveQuery<TimeSinceQuery>,
     State(state): State<SharedObservingConditionsState>,
 ) -> Response {
     let dev = match get_device(&state.devices, device).await {
