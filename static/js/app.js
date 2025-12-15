@@ -31,6 +31,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadConfig();
     await refreshStatus();
     await loadLoggingStatus();
+
+    // Auto-connect ASCOM devices on page load
+    await autoConnectDevices();
+
     // Auto-refresh status every 5 seconds
     setInterval(refreshStatus, 5000);
 
@@ -739,6 +743,35 @@ function downloadCurrentLog() {
 
 function downloadLogFile(filename) {
     window.location.href = `/api/logging/download/${encodeURIComponent(filename)}`;
+}
+
+// Auto-connect ASCOM devices on page load
+async function autoConnectDevices() {
+    try {
+        // Connect Safety Monitor
+        await fetch('/api/v1/safetymonitor/0/connected', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'Connected=true'
+        });
+
+        // Connect all weather devices with auto_connect enabled
+        if (config.weather_devices) {
+            for (const [deviceNumber, deviceConfig] of Object.entries(config.weather_devices)) {
+                if (deviceConfig.auto_connect && deviceConfig.enabled) {
+                    await fetch(`/api/v1/observingconditions/${deviceNumber}/connected`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'Connected=true'
+                    });
+                }
+            }
+        }
+
+        console.log('Auto-connected ASCOM devices');
+    } catch (error) {
+        console.error('Failed to auto-connect devices:', error);
+    }
 }
 
 // Toggle ASCOM connection state

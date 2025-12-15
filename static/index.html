@@ -35,6 +35,7 @@
                 <button class="tab" onclick="switchTab('mqtt-servers')">MQTT Servers</button>
                 <button class="tab" onclick="switchTab('mqtt-monitors')">MQTT Monitors</button>
                 <button class="tab" onclick="switchTab('alpaca-monitors')">Alpaca Monitors</button>
+                <button class="tab" onclick="switchTab('weather-devices')">Weather Devices</button>
                 <button class="tab" onclick="switchTab('settings')">Settings</button>
             </div>
 
@@ -51,6 +52,10 @@
                 <div class="section">
                     <h2>Monitor Status</h2>
                     <div id="monitor-status-list"></div>
+                </div>
+                <div class="section">
+                    <h2>Weather Device Status</h2>
+                    <div id="weather-status-list"></div>
                 </div>
             </div>
 
@@ -250,6 +255,280 @@
                 </div>
             </div>
 
+            <!-- Weather Devices Tab -->
+            <div id="tab-weather-devices" class="tab-content">
+                <div class="section">
+                    <h2>Weather Devices</h2>
+                    <button class="btn btn-primary" onclick="showAddWeatherDevice()">Add Weather Device</button>
+                    <div id="weather-devices-list" class="list-container"></div>
+                </div>
+
+                <div id="weather-device-form" class="section" style="display: none;">
+                    <h2 id="weather-device-form-title">Add Weather Device</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Device Number *</label>
+                            <input type="number" id="weather-device-number" value="0" min="0">
+                            <div class="info-text">ASCOM device number (0, 1, 2, ...)</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Device Name *</label>
+                            <input type="text" id="weather-device-name" placeholder="e.g., Tempest Weather Station">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="weather-device-description" placeholder="e.g., WeatherFlow Tempest all-in-one weather station">
+                    </div>
+                    <div class="form-group">
+                        <label>Data Source *</label>
+                        <select id="weather-device-source-type" onchange="updateWeatherSourceFields()">
+                            <option value="tempest">Tempest Weather Station (UDP)</option>
+                            <option value="weatherunderground" disabled>Weather Underground (Future)</option>
+                        </select>
+                    </div>
+                    <div id="tempest-fields">
+                        <div class="form-group">
+                            <label>Tempest Serial Number (optional)</label>
+                            <input type="text" id="weather-device-tempest-serial" placeholder="e.g., ST-00012345">
+                            <div class="info-text">Leave empty to accept data from any Tempest device on the network</div>
+                        </div>
+                    </div>
+                    <div id="wu-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Station ID</label>
+                                <input type="text" id="weather-device-wu-station" placeholder="e.g., KMABOSTON123">
+                            </div>
+                            <div class="form-group">
+                                <label>API Key</label>
+                                <input type="text" id="weather-device-wu-apikey" placeholder="Your WU API key">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="weather-device-enabled" checked>
+                            <span>Device Enabled</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="weather-device-auto-connect" checked>
+                            <span>Auto-Connect on Startup</span>
+                        </label>
+                        <div class="info-text">If checked, device will start in connected state (no manual connect required)</div>
+                    </div>
+
+                    <h3>Safety Thresholds (Optional)</h3>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="weather-safety-enabled" onchange="toggleWeatherSafetyFields()">
+                            <span>Enable Safety Monitoring</span>
+                        </label>
+                        <div class="info-text">Monitor weather conditions and integrate with Safety Monitor</div>
+                    </div>
+
+                    <div id="weather-safety-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Timeout (seconds)</label>
+                                <input type="number" id="weather-safety-timeout" value="300" min="0">
+                                <div class="info-text">Mark unsafe if no data received within this period</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Hold Time (seconds)</label>
+                                <input type="number" id="weather-safety-hold-time" value="60" min="0">
+                                <div class="info-text">Minimum time before state change</div>
+                            </div>
+                        </div>
+
+                        <!-- Temperature Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-temperature-enabled" onchange="toggleThresholdFields('temperature')">
+                                <span>Temperature Threshold</span>
+                            </label>
+                            <div id="weather-threshold-temperature-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (°C)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-temperature" value="-10">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-temperature-operator">
+                                            <option value="greaterthan">Greater Than</option>
+                                            <option value="lessthan" selected>Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-temperature-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Humidity Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-humidity-enabled" onchange="toggleThresholdFields('humidity')">
+                                <span>Humidity Threshold</span>
+                            </label>
+                            <div id="weather-threshold-humidity-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (%)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-humidity" value="85">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-humidity-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-humidity-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Wind Speed Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-wind_speed-enabled" onchange="toggleThresholdFields('wind_speed')">
+                                <span>Wind Speed Threshold</span>
+                            </label>
+                            <div id="weather-threshold-wind_speed-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (m/s)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-wind_speed" value="15">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-wind_speed-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-wind_speed-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Wind Gust Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-wind_gust-enabled" onchange="toggleThresholdFields('wind_gust')">
+                                <span>Wind Gust Threshold</span>
+                            </label>
+                            <div id="weather-threshold-wind_gust-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (m/s)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-wind_gust" value="20">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-wind_gust-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-wind_gust-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rain Rate Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-rain_rate-enabled" onchange="toggleThresholdFields('rain_rate')">
+                                <span>Rain Rate Threshold</span>
+                            </label>
+                            <div id="weather-threshold-rain_rate-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (mm/hr)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-rain_rate" value="0.1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-rain_rate-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-rain_rate-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sky Brightness Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-sky_brightness-enabled" onchange="toggleThresholdFields('sky_brightness')">
+                                <span>Sky Brightness Threshold</span>
+                            </label>
+                            <div id="weather-threshold-sky_brightness-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (mag/arcsec²)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_brightness" value="18">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-sky_brightness-operator">
+                                            <option value="greaterthan">Greater Than</option>
+                                            <option value="lessthan" selected>Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-sky_brightness-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-success" onclick="saveWeatherDevice()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelWeatherDevice()">Cancel</button>
+                </div>
+            </div>
+
             <!-- Settings Tab -->
             <div id="tab-settings" class="tab-content">
                 <div class="section">
@@ -299,5 +578,6 @@
 
     <script src="js/starfield.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/weather.js"></script>
 </body>
 </html>

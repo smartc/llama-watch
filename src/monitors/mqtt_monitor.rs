@@ -135,11 +135,12 @@ impl MqttMonitor {
             mqtt_options.set_credentials(username, password);
         }
 
-        let (client, mut eventloop) = AsyncClient::new(mqtt_options, 10);
+        // Create client with larger queue to handle bursts of messages
+        let (client, mut eventloop) = AsyncClient::new(mqtt_options, 100);
 
-        // Subscribe to topic
+        // Subscribe to topic with QoS 1 for reliable delivery
         client
-            .subscribe(&config.topic, QoS::AtMostOnce)
+            .subscribe(&config.topic, QoS::AtLeastOnce)
             .await
             .context("Failed to subscribe to topic")?;
 

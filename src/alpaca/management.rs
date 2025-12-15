@@ -1,8 +1,21 @@
 use axum::{response::Json, extract::{State, Query}};
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
-use super::safety_monitor::SharedAppState;
+use std::sync::Arc;
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+use super::safety_monitor::{SafetyMonitor, SharedMonitorState};
+use crate::weather::ObservingConditionsDevice;
 use super::models::{AlpacaResponse, QueryParams};
+
+/// Unified management state for all device types
+pub struct ManagementState {
+    pub safety_monitor: Arc<SafetyMonitor>,
+    pub monitor_state: SharedMonitorState,
+    pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
+}
+
+pub type SharedManagementState = Arc<ManagementState>;
 
 /// Generate a unique device ID based on hardware
 fn generate_unique_id() -> String {
@@ -52,7 +65,7 @@ pub async fn get_api_versions(
 
 /// GET /management/v1/description
 pub async fn get_description(
-    State(state): State<SharedAppState>,
+    State(state): State<SharedManagementState>,
     Query(params): Query<QueryParams>,
 ) -> Json<AlpacaResponse<ServerDescription>> {
     Json(AlpacaResponse::success(
@@ -69,16 +82,32 @@ pub async fn get_description(
 
 /// GET /management/v1/configureddevices
 pub async fn get_configured_devices(
-    State(state): State<SharedAppState>,
+    State(state): State<SharedManagementState>,
     Query(params): Query<QueryParams>,
 ) -> Json<AlpacaResponse<Vec<DeviceDescription>>> {
+    let mut devices = vec![];
+
+    // Add SafetyMonitor device
+    devices.push(DeviceDescription {
+        device_name: state.safety_monitor.device_name.clone(),
+        device_type: "SafetyMonitor".to_string(),
+        device_number: 0,
+        unique_i_d: format!("{}-safetymonitor-0", generate_unique_id()),
+    });
+
+    // Add ObservingConditions devices
+    let oc_devices = state.oc_devices.read().await;
+    for (device_number, device) in oc_devices.iter() {
+        devices.push(DeviceDescription {
+            device_name: device.name.clone(),
+            device_type: "ObservingConditions".to_string(),
+            device_number: *device_number,
+            unique_i_d: format!("{}-observingconditions-{}", generate_unique_id(), device_number),
+        });
+    }
+
     Json(AlpacaResponse::success(
-        vec![DeviceDescription {
-            device_name: state.safety_monitor.device_name.clone(),
-            device_type: "SafetyMonitor".to_string(),
-            device_number: 0,
-            unique_i_d: generate_unique_id(),
-        }],
+        devices,
         params.client_transaction_i_d,
         0,
     ))
