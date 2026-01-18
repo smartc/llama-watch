@@ -424,7 +424,7 @@ pub struct MeasurementInfo {
     pub threshold: f64,
     pub is_safe: bool,
     pub is_monitored: bool, // Whether this measurement is included in safety determination
-    pub timeout_seconds: Option<u64>,
+    pub timeout_seconds: Option<i64>, // Negative = ignore timeout
     pub last_update: Option<String>,
 }
 
@@ -780,6 +780,209 @@ pub async fn set_weather_device_connection(
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Weather device {} not found", device_number)))?;
 
     device.set_connected(connected);
+
+    Ok(StatusCode::OK)
+}
+
+// ============================================================================
+// Alpaca Discovery API endpoints
+// ============================================================================
+
+use crate::alpaca::discovery_client::{DiscoveryClient, DiscoveredDevice};
+
+#[derive(Deserialize)]
+pub struct DiscoverRequest {
+    #[serde(default = "default_discovery_timeout")]
+    pub timeout_seconds: u64,
+}
+
+fn default_discovery_timeout() -> u64 {
+    5
+}
+
+// GET /api/discovery/scan - Discover Alpaca devices on the network
+pub async fn discover_devices(
+) -> Json<Vec<DiscoveredDevice>> {
+    let client = DiscoveryClient::new(5);
+    let devices = client.discover().await;
+    Json(devices)
+}
+
+// POST /api/discovery/scan - Discover Alpaca devices with custom timeout
+pub async fn discover_devices_with_options(
+    Json(req): Json<DiscoverRequest>,
+) -> Json<Vec<DiscoveredDevice>> {
+    let client = DiscoveryClient::new(req.timeout_seconds);
+    let devices = client.discover().await;
+    Json(devices)
+}
+
+#[derive(Deserialize)]
+pub struct ProbeRequest {
+    pub host: String,
+    pub port: u16,
+}
+
+// POST /api/discovery/probe - Probe a specific host for Alpaca devices
+pub async fn probe_device(
+    Json(req): Json<ProbeRequest>,
+) -> Result<Json<DiscoveredDevice>, (StatusCode, String)> {
+    let client = DiscoveryClient::new(5);
+    match client.probe_host(&req.host, req.port).await {
+        Some(device) => Ok(Json(device)),
+        None => Err((StatusCode::NOT_FOUND, "No Alpaca server found at specified address".to_string())),
+    }
+}
+
+// ============================================================================
+// Monitor Groups API endpoints
+// ============================================================================
+
+use crate::config::models::MonitorGroupConfig;
+use crate::monitors::MonitorGroupStatus;
+
+// GET /api/groups - Get all monitor groups
+pub async fn get_monitor_groups(
+    State(state): State<SharedWebState>,
+) -> Json<HashMap<String, MonitorGroupConfig>> {
+    let config = state.config.read().await;
+    Json(config.monitor_groups.clone())
+}
+
+// GET /api/groups/status - Get status of all monitor groups
+pub async fn get_monitor_group_statuses(
+    State(state): State<SharedWebState>,
+) -> Json<Vec<MonitorGroupStatus>> {
+    let monitor_state = state.monitor_state.read().await;
+    Json(monitor_state.get_group_statuses())
+}
+
+// GET /api/groups/:id - Get a specific monitor group
+pub async fn get_monitor_group(
+    Path(id): Path<String>,
+    State(state): State<SharedWebState>,
+) -> Result<Json<MonitorGroupConfig>, (StatusCode, String)> {
+    let config = state.config.read().await;
+    match config.monitor_groups.get(&id) {
+        Some(group) => Ok(Json(group.clone())),
+        None => Err((StatusCode::NOT_FOUND, format!("Monitor group '{}' not found", id))),
+    }
+}
+
+// POST /api/groups - Create a new monitor group
+pub async fn create_monitor_group(
+    State(state): State<SharedWebState>,
+    Json(group): Json<MonitorGroupConfig>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if group already exists
+    if config.monitor_groups.contains_key(&group.id) {
+        return Err((StatusCode::CONFLICT, format!("Monitor group '{}' already exists", group.id)));
+    }
+
+    // Add group to config
+    let group_id = group.id.clone();
+    config.monitor_groups.insert(group_id.clone(), group);
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        // Rollback
+        config.monitor_groups.remove(&group_id);
+        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+    }
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Release config lock before acquiring monitor_state lock
+    let config_clone = config.clone();
+    drop(config);
+
+    // Reload monitors to pick up new groups
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&config_clone).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+
+    Ok(StatusCode::CREATED)
+}
+
+// PUT /api/groups/:id - Update a monitor group
+pub async fn update_monitor_group(
+    Path(id): Path<String>,
+    State(state): State<SharedWebState>,
+    Json(group): Json<MonitorGroupConfig>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if group exists
+    if !config.monitor_groups.contains_key(&id) {
+        return Err((StatusCode::NOT_FOUND, format!("Monitor group '{}' not found", id)));
+    }
+
+    // Ensure ID matches
+    if group.id != id {
+        return Err((StatusCode::BAD_REQUEST, "Group ID mismatch".to_string()));
+    }
+
+    // Update group
+    config.monitor_groups.insert(id.clone(), group);
+
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        return Err((StatusCode::BAD_REQUEST, e.to_string()));
+    }
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Release config lock before acquiring monitor_state lock
+    let config_clone = config.clone();
+    drop(config);
+
+    // Reload monitors to pick up updated groups
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&config_clone).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// DELETE /api/groups/:id - Delete a monitor group
+pub async fn delete_monitor_group(
+    Path(id): Path<String>,
+    State(state): State<SharedWebState>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Check if group exists
+    if !config.monitor_groups.contains_key(&id) {
+        return Err((StatusCode::NOT_FOUND, format!("Monitor group '{}' not found", id)));
+    }
+
+    // Remove group
+    config.monitor_groups.remove(&id);
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Release config lock before acquiring monitor_state lock
+    let config_clone = config.clone();
+    drop(config);
+
+    // Reload monitors
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&config_clone).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
 
     Ok(StatusCode::OK)
 }

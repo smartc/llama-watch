@@ -42,7 +42,7 @@ pub struct MqttMonitorConfig {
     pub operator: ComparisonOperator,
     pub safe_when_true: bool, // if true, safe when comparison is true; if false, unsafe when true
     #[serde(default = "default_timeout")]
-    pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
+    pub timeout_seconds: i64, // Mark unsafe if no data received in this many seconds (default 300, <0 = ignore timeout)
     #[serde(default)]
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
@@ -64,7 +64,7 @@ pub struct AlpacaMonitorConfig {
     pub operator: ComparisonOperator,
     pub safe_when_true: bool,
     #[serde(default = "default_timeout")]
-    pub timeout_seconds: u64, // Mark unsafe if no data received in this many seconds (default 300)
+    pub timeout_seconds: i64, // Mark unsafe if no data received in this many seconds (default 300, <0 = ignore timeout)
     #[serde(default)]
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
@@ -73,7 +73,7 @@ pub struct AlpacaMonitorConfig {
     pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
 }
 
-fn default_timeout() -> u64 {
+fn default_timeout() -> i64 {
     300
 }
 
@@ -128,6 +128,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Key is device_number
     #[serde(default)]
+    pub monitor_groups: HashMap<String, MonitorGroupConfig>, // Named groups with custom logic
+    #[serde(default)]
     pub switches: HashMap<String, SwitchConfig>, // Explicit switch definitions with aggregation
     #[serde(default)]
     pub switch_device: SwitchDeviceConfig, // ASCOM Switch device configuration
@@ -158,6 +160,7 @@ impl AppConfig {
             mqtt_monitors: HashMap::new(),
             alpaca_monitors: HashMap::new(),
             weather_devices: HashMap::new(),
+            monitor_groups: HashMap::new(),
             switches: HashMap::new(),
             switch_device: SwitchDeviceConfig::default(),
             server_port: 8080,
@@ -177,6 +180,47 @@ impl AppConfig {
                     "MQTT monitor '{}' references non-existent server '{}'",
                     monitor.id, monitor.server_id
                 ));
+            }
+        }
+
+        // Validate that all monitor group members reference valid monitors
+        for group in self.monitor_groups.values() {
+            if group.members.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Monitor group '{}' has no members defined",
+                    group.id
+                ));
+            }
+
+            for member_id in &group.members {
+                let mqtt_exists = self.mqtt_monitors.contains_key(member_id);
+                let alpaca_exists = self.alpaca_monitors.contains_key(member_id);
+                // Weather monitors use device_number as string
+                let weather_exists = member_id.parse::<u32>().ok()
+                    .map(|num| self.weather_devices.contains_key(&num))
+                    .unwrap_or(false);
+                if !mqtt_exists && !alpaca_exists && !weather_exists {
+                    return Err(anyhow::anyhow!(
+                        "Monitor group '{}' references non-existent monitor '{}'",
+                        group.id, member_id
+                    ));
+                }
+            }
+
+            // Validate MinOf logic has a reasonable count
+            if let GroupLogic::MinOf { count } = &group.logic {
+                if *count == 0 {
+                    return Err(anyhow::anyhow!(
+                        "Monitor group '{}' has min_of count of 0, which would always be safe",
+                        group.id
+                    ));
+                }
+                if *count > group.members.len() as u32 {
+                    return Err(anyhow::anyhow!(
+                        "Monitor group '{}' has min_of count {} but only {} members",
+                        group.id, count, group.members.len()
+                    ));
+                }
             }
         }
 
@@ -271,7 +315,7 @@ pub struct WeatherSafetyThresholds {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default = "default_timeout")]
-    pub timeout_seconds: u64,
+    pub timeout_seconds: i64, // <0 = ignore timeout
     #[serde(default)]
     pub hold_time_seconds: u64,
     #[serde(default)]
@@ -294,11 +338,72 @@ pub struct ThresholdConfig {
     pub operator: ComparisonOperator,
     pub safe_when_true: bool,
     #[serde(default)]
-    pub timeout_seconds: Option<u64>, // Per-measurement timeout (overrides global if set)
+    pub timeout_seconds: Option<i64>, // Per-measurement timeout (overrides global if set, <0 = ignore timeout)
 }
 
 fn default_auto_connect() -> bool {
     true
+}
+
+/// Logic for combining multiple sources into a single result
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GroupLogic {
+    /// OR logic - group is unsafe if ANY member is unsafe
+    Any,
+    /// AND logic - group is unsafe only if ALL members are unsafe
+    All,
+    /// N-out-of-M logic - group is unsafe if at least N members are unsafe
+    #[serde(rename = "min_of")]
+    MinOf { count: u32 },
+}
+
+impl Default for GroupLogic {
+    fn default() -> Self {
+        GroupLogic::Any
+    }
+}
+
+impl GroupLogic {
+    /// Evaluate the logic given a list of unsafe states (true = unsafe)
+    pub fn evaluate_unsafe(&self, unsafe_states: &[bool]) -> bool {
+        if unsafe_states.is_empty() {
+            return false;
+        }
+
+        let unsafe_count = unsafe_states.iter().filter(|&&s| s).count() as u32;
+
+        match self {
+            GroupLogic::Any => unsafe_count > 0,
+            GroupLogic::All => unsafe_count == unsafe_states.len() as u32,
+            GroupLogic::MinOf { count } => unsafe_count >= *count,
+        }
+    }
+
+    /// Get a human-readable description of the logic
+    pub fn description(&self) -> String {
+        match self {
+            GroupLogic::Any => "unsafe if ANY member is unsafe".to_string(),
+            GroupLogic::All => "unsafe only if ALL members are unsafe".to_string(),
+            GroupLogic::MinOf { count } => format!("unsafe if at least {} members are unsafe", count),
+        }
+    }
+}
+
+/// Configuration for a monitor group that aggregates multiple monitors with custom logic
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitorGroupConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// List of monitor IDs to include in this group (MQTT, Alpaca, or Weather monitors)
+    pub members: Vec<String>,
+    /// How to combine member states to determine group safety
+    #[serde(default)]
+    pub logic: GroupLogic,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 /// Logic for combining multiple sources into a single switch
@@ -358,9 +463,9 @@ pub struct SwitchConfig {
     /// How to combine source states
     #[serde(default)]
     pub logic: SwitchLogic,
-    /// Timeout for the aggregated switch (sources without data within this time are considered unsafe)
+    /// Timeout for the aggregated switch (sources without data within this time are considered unsafe, <0 = ignore timeout)
     #[serde(default = "default_timeout")]
-    pub timeout_seconds: u64,
+    pub timeout_seconds: i64,
     /// Hold time for state transitions (prevents flapping)
     #[serde(default)]
     pub hold_time_seconds: u64,

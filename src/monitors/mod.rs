@@ -2,17 +2,41 @@ pub mod alpaca_monitor;
 pub mod mqtt_monitor;
 
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::config::models::{AppConfig, MonitorStatus};
+use crate::config::models::{AppConfig, GroupLogic, MonitorGroupConfig, MonitorStatus};
 use alpaca_monitor::AlpacaMonitorManager;
 use mqtt_monitor::MqttMonitorManager;
+
+/// Status of a monitor group
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MonitorGroupStatus {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub logic: GroupLogic,
+    pub is_safe: bool,
+    pub enabled: bool,
+    /// Member statuses (id, name, is_safe)
+    pub member_statuses: Vec<GroupMemberStatus>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroupMemberStatus {
+    pub id: String,
+    pub name: String,
+    pub is_safe: bool,
+    pub error: Option<String>,
+}
 
 pub struct MonitorState {
     mqtt_manager: MqttMonitorManager,
     alpaca_manager: AlpacaMonitorManager,
+    /// Monitor groups configuration
+    groups: HashMap<String, MonitorGroupConfig>,
     /// Last known safe state before monitor reconfiguration
     /// Holds true if we were safe, false otherwise. None means never determined.
     last_stable_safe_state: Option<bool>,
@@ -23,6 +47,7 @@ impl MonitorState {
         Self {
             mqtt_manager: MqttMonitorManager::new(),
             alpaca_manager: AlpacaMonitorManager::new(),
+            groups: HashMap::new(),
             last_stable_safe_state: None,
         }
     }
@@ -50,6 +75,9 @@ impl MonitorState {
                 .await?;
         }
 
+        // Load monitor groups
+        self.groups = config.monitor_groups.clone();
+
         Ok(())
     }
 
@@ -74,6 +102,7 @@ impl MonitorState {
         // Clear and reinitialize
         self.mqtt_manager = MqttMonitorManager::new();
         self.alpaca_manager = AlpacaMonitorManager::new();
+        self.groups = HashMap::new();
 
         // Initialize with new config
         self.initialize(config).await?;
@@ -94,7 +123,7 @@ impl MonitorState {
         let all_statuses = self.get_all_statuses();
 
         // Filter to only monitors that should contribute to safety
-        let safety_statuses: Vec<_> = all_statuses
+        let safety_statuses: Vec<&MonitorStatus> = all_statuses
             .iter()
             .filter(|s| s.include_in_safety)
             .collect();
@@ -110,9 +139,10 @@ impl MonitorState {
         if has_initializing {
             // If we have monitors that are initializing, use graceful handling
             // Check the monitors that DO have data
-            let monitors_with_data: Vec<_> = safety_statuses
+            let monitors_with_data: Vec<&MonitorStatus> = safety_statuses
                 .iter()
                 .filter(|s| s.last_update.is_some())
+                .cloned()
                 .collect();
 
             if monitors_with_data.is_empty() {
@@ -121,10 +151,10 @@ impl MonitorState {
                 return self.last_stable_safe_state.unwrap_or(false);
             }
 
-            // Check if any monitor with data is unsafe
-            let any_unsafe_with_data = monitors_with_data.iter().any(|s| !s.is_safe || s.error.is_some());
+            // Check if any monitor with data is unsafe (considering group logic)
+            let is_safe_with_data = self.evaluate_safety_with_groups(&monitors_with_data);
 
-            if any_unsafe_with_data {
+            if !is_safe_with_data {
                 // We have real unsafe data, report unsafe immediately
                 return false;
             }
@@ -134,15 +164,65 @@ impl MonitorState {
             return self.last_stable_safe_state.unwrap_or(false);
         }
 
-        // All safety monitors have data - calculate normal safety
-        let is_safe = safety_statuses.iter().all(|status| {
-            status.is_safe && status.error.is_none()
-        });
+        // All safety monitors have data - calculate normal safety with group logic
+        self.evaluate_safety_with_groups(&safety_statuses)
+    }
 
-        // This is now a stable state, we can update our last known state
-        // (This would ideally be done in a separate method, but we're in a read-only context)
+    /// Evaluate safety considering monitor groups
+    /// Returns true if overall system is safe, false otherwise
+    fn evaluate_safety_with_groups(&self, statuses: &[&MonitorStatus]) -> bool {
+        // Build a map of monitor id -> status for quick lookup
+        let status_map: HashMap<&str, &MonitorStatus> = statuses
+            .iter()
+            .map(|s| (s.id.as_str(), *s))
+            .collect();
 
-        is_safe
+        // Track which monitors are in groups
+        let mut grouped_monitors: HashSet<&str> = HashSet::new();
+
+        // Evaluate each enabled group
+        for group in self.groups.values() {
+            if !group.enabled {
+                continue;
+            }
+
+            // Collect unsafe states for group members
+            let mut member_unsafe_states = Vec::new();
+
+            for member_id in &group.members {
+                if let Some(status) = status_map.get(member_id.as_str()) {
+                    grouped_monitors.insert(member_id.as_str());
+                    // A member is "unsafe" if is_safe is false OR has an error
+                    let is_unsafe = !status.is_safe || status.error.is_some();
+                    member_unsafe_states.push(is_unsafe);
+                } else {
+                    // Member not found in current statuses - could be a weather monitor
+                    // For now, treat missing members as safe (they may not have data yet)
+                    grouped_monitors.insert(member_id.as_str());
+                    member_unsafe_states.push(false);
+                }
+            }
+
+            // Evaluate group logic
+            if group.logic.evaluate_unsafe(&member_unsafe_states) {
+                // Group is unsafe according to its logic
+                return false;
+            }
+        }
+
+        // Evaluate ungrouped monitors - all must be safe
+        for status in statuses {
+            if grouped_monitors.contains(status.id.as_str()) {
+                continue; // Already evaluated in a group
+            }
+
+            // For ungrouped monitors, ANY unsafe = system unsafe
+            if !status.is_safe || status.error.is_some() {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Check safety ignoring monitors that are pending (used during reload)
@@ -160,9 +240,10 @@ impl MonitorState {
         }
 
         // Only check monitors that have data
-        let monitors_with_data: Vec<_> = safety_statuses
+        let monitors_with_data: Vec<&MonitorStatus> = safety_statuses
             .iter()
             .filter(|s| s.last_update.is_some())
+            .map(|s| *s)
             .collect();
 
         if monitors_with_data.is_empty() {
@@ -171,9 +252,60 @@ impl MonitorState {
             return self.last_stable_safe_state.unwrap_or(false);
         }
 
-        monitors_with_data.iter().all(|status| {
-            status.is_safe && status.error.is_none()
-        })
+        // Use group-aware safety evaluation
+        self.evaluate_safety_with_groups(&monitors_with_data)
+    }
+
+    /// Get all monitor group statuses
+    pub fn get_group_statuses(&self) -> Vec<MonitorGroupStatus> {
+        let all_statuses = self.get_all_statuses();
+        let status_map: HashMap<&str, &MonitorStatus> = all_statuses
+            .iter()
+            .map(|s| (s.id.as_str(), s))
+            .collect();
+
+        self.groups
+            .values()
+            .map(|group| {
+                let mut member_statuses = Vec::new();
+                let mut member_unsafe_states = Vec::new();
+
+                for member_id in &group.members {
+                    if let Some(status) = status_map.get(member_id.as_str()) {
+                        let is_unsafe = !status.is_safe || status.error.is_some();
+                        member_unsafe_states.push(is_unsafe);
+                        member_statuses.push(GroupMemberStatus {
+                            id: status.id.clone(),
+                            name: status.name.clone(),
+                            is_safe: status.is_safe && status.error.is_none(),
+                            error: status.error.clone(),
+                        });
+                    } else {
+                        // Member not found - might be a weather monitor or not yet initialized
+                        member_unsafe_states.push(false);
+                        member_statuses.push(GroupMemberStatus {
+                            id: member_id.clone(),
+                            name: member_id.clone(),
+                            is_safe: true,
+                            error: Some("Monitor not found".to_string()),
+                        });
+                    }
+                }
+
+                let group_is_unsafe = group.logic.evaluate_unsafe(&member_unsafe_states);
+
+                MonitorGroupStatus {
+                    id: group.id.clone(),
+                    name: group.name.clone(),
+                    description: group.description.clone(),
+                    logic: group.logic.clone(),
+                    is_safe: !group_is_unsafe,
+                    enabled: group.enabled,
+                    member_statuses,
+                    error: None,
+                }
+            })
+            .collect()
     }
 
     /// Check if all configured monitors have received at least one update

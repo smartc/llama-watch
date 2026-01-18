@@ -65,11 +65,14 @@ impl MqttMonitor {
             }
         }
 
-        // Check for safety timeout (if enabled - 0 means disabled)
+        // Check for safety timeout (if enabled)
+        // timeout_seconds > 0: timeout enabled
+        // timeout_seconds == 0: timeout disabled
+        // timeout_seconds < 0: timeout ignored completely (no "no data yet" error either)
         if self.config.timeout_seconds > 0 {
             if let Some(last_update) = status.last_update {
                 let elapsed = now.signed_duration_since(last_update);
-                if elapsed.num_seconds() as u64 > self.config.timeout_seconds {
+                if elapsed.num_seconds() > self.config.timeout_seconds {
                     status.is_safe = false;
                     status.error = Some(format!(
                         "Timeout: No data received for {} seconds (timeout: {}s)",
@@ -82,7 +85,12 @@ impl MqttMonitor {
                 status.is_safe = false;
                 status.error = Some("No data received yet".to_string());
             }
+        } else if self.config.timeout_seconds == 0 && status.last_update.is_none() {
+            // timeout_seconds == 0 but no data yet - still report waiting for data
+            // (but don't mark as unsafe)
+            status.error = Some("Waiting for initial data".to_string());
         }
+        // If timeout_seconds < 0, we skip all timeout/waiting checks
 
         status
     }

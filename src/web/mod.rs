@@ -25,6 +25,13 @@ pub fn create_router(state: SharedWebState) -> Router {
         .route("/api/weather/devices/:id/toggle", post(handlers::toggle_weather_device))
         .route("/api/weather/devices/:id/connect", post(handlers::set_weather_device_connection))
         .route("/api/weather/status", get(handlers::get_weather_status))
+        // Alpaca discovery endpoints
+        .route("/api/discovery/scan", get(handlers::discover_devices).post(handlers::discover_devices_with_options))
+        .route("/api/discovery/probe", post(handlers::probe_device))
+        // Monitor groups endpoints
+        .route("/api/groups", get(handlers::get_monitor_groups).post(handlers::create_monitor_group))
+        .route("/api/groups/status", get(handlers::get_monitor_group_statuses))
+        .route("/api/groups/:id", get(handlers::get_monitor_group).put(handlers::update_monitor_group).delete(handlers::delete_monitor_group))
         .nest_service("/", ServeDir::new("static"))
         .with_state(state)
 }

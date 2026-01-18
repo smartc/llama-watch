@@ -3,6 +3,7 @@ let config = {
     mqtt_servers: {},
     mqtt_monitors: {},
     alpaca_monitors: {},
+    monitor_groups: {},
     switches: {},
     switch_device: {
         enabled: true,
@@ -150,6 +151,15 @@ async function refreshStatus() {
         // Update status list
         renderMonitorStatus(status.monitors);
 
+        // Fetch and render group status
+        try {
+            const groupsResponse = await fetch('/api/groups/status');
+            const groupStatuses = await groupsResponse.json();
+            renderGroupStatus(groupStatuses);
+        } catch (err) {
+            console.warn('Failed to fetch group status:', err);
+        }
+
         // Update switch status list
         renderSwitchStatus(status.switches || []);
 
@@ -243,6 +253,7 @@ function renderAll() {
     renderMqttServers();
     renderMqttMonitors();
     renderAlpacaMonitors();
+    renderMonitorGroups();
     renderSwitches();
     renderSettings();
     renderSwitchDeviceSettings();
@@ -576,7 +587,7 @@ function saveMqttMonitor() {
     const hold_time_seconds = parseInt(document.getElementById('mqtt-monitor-hold-time').value);
     const include_in_safety = document.getElementById('mqtt-monitor-include-in-safety').checked;
 
-    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
+    if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -716,7 +727,7 @@ function saveAlpacaMonitor() {
     const hold_time_seconds = parseInt(document.getElementById('alpaca-monitor-hold-time').value);
     const include_in_safety = document.getElementById('alpaca-monitor-include-in-safety').checked;
 
-    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
+    if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
         return;
     }
@@ -1098,6 +1109,84 @@ function renderSwitchStatus(switches) {
     }).join('');
 }
 
+// Render group status
+function renderGroupStatus(groups) {
+    const container = document.getElementById('groups-status-list');
+    const section = document.getElementById('groups-status-section');
+
+    if (!groups || groups.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+
+    container.innerHTML = groups.map(group => {
+        const statusClass = group.enabled ? (group.is_safe ? 'safe' : 'unsafe') : 'disabled';
+        const statusText = group.enabled ? (group.is_safe ? 'SAFE' : 'UNSAFE') : 'DISABLED';
+
+        // Format logic description
+        let logicText = '';
+        if (group.logic === 'any') {
+            logicText = 'Unsafe if ANY member unsafe (OR)';
+        } else if (group.logic === 'all') {
+            logicText = 'Unsafe only if ALL members unsafe (AND)';
+        } else if (group.logic && group.logic.min_of) {
+            logicText = `Unsafe if at least ${group.logic.min_of.count} of ${group.member_statuses.length} members unsafe`;
+        }
+
+        // Format member states
+        const membersHtml = group.member_statuses.map(member => {
+            const memberClass = member.is_safe ? 'safe' : 'unsafe';
+            const memberIcon = member.is_safe ? '✓' : '⚠';
+            return `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                    <span class="status-indicator ${memberClass}" style="width: 10px; height: 10px;"></span>
+                    <span>${memberIcon} ${escapeHtml(member.name)}</span>
+                    ${member.error ? `<span style="color: #f44336; font-size: 0.85em;">[${escapeHtml(member.error)}]</span>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="card ${statusClass}">
+                <h3>
+                    <span class="status-indicator ${statusClass}"></span>
+                    ${escapeHtml(group.name)}
+                </h3>
+                <div class="card-grid">
+                    <div class="card-row">
+                        <span class="card-label">Status:</span>
+                        <span class="${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Logic:</span>
+                        <span>${logicText}</span>
+                    </div>
+                    ${group.description ? `
+                    <div class="card-row">
+                        <span class="card-label">Description:</span>
+                        <span>${escapeHtml(group.description)}</span>
+                    </div>
+                    ` : ''}
+                    ${group.error ? `
+                    <div class="card-row">
+                        <span class="card-label">Error:</span>
+                        <span style="color: #f44336;">${escapeHtml(group.error)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="card-row" style="grid-column: 1 / -1;">
+                        <span class="card-label">Members (${group.member_statuses.length}):</span>
+                        <div style="margin-top: 4px;">
+                            ${membersHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
 // ============================================================================
 // Switch Configuration
 // ============================================================================
@@ -1318,4 +1407,343 @@ function deleteSwitch(id) {
             showNotification('Switch deleted. Click Reload to apply changes.', 'success');
         }
     });
+}
+
+// ============================================================================
+// Monitor Groups
+// ============================================================================
+
+function renderMonitorGroups() {
+    const container = document.getElementById('monitor-groups-list');
+    const groups = Object.values(config.monitor_groups || {});
+
+    if (groups.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No monitor groups configured. Create groups to combine multiple monitors with custom logic.</p>';
+        return;
+    }
+
+    container.innerHTML = groups.map(group => {
+        let logicText = '';
+        if (group.logic === 'any') {
+            logicText = 'ANY (unsafe if any)';
+        } else if (group.logic === 'all') {
+            logicText = 'ALL (unsafe if all)';
+        } else if (group.logic && group.logic.min_of) {
+            logicText = `MIN ${group.logic.min_of.count} of ${group.members.length}`;
+        }
+
+        return `
+            <div class="list-item">
+                <div class="list-item-info">
+                    <strong>${escapeHtml(group.name)}</strong> (${escapeHtml(group.id)})<br>
+                    Logic: ${logicText}, Members: ${group.members.length}
+                    ${!group.enabled ? '<span style="color: #999;"> [Disabled]</span>' : ''}
+                </div>
+                <div class="list-item-actions">
+                    <button class="btn btn-primary" onclick="editMonitorGroup('${escapeHtml(group.id)}')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteMonitorGroup('${escapeHtml(group.id)}')">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleGroupLogicOptions() {
+    const logic = document.getElementById('group-logic').value;
+    document.getElementById('group-min-count-group').style.display = logic === 'min_of' ? 'block' : 'none';
+}
+
+function populateGroupMembers() {
+    const container = document.getElementById('group-members-container');
+    const mqttMonitors = Object.values(config.mqtt_monitors || {});
+    const alpacaMonitors = Object.values(config.alpaca_monitors || {});
+
+    if (mqttMonitors.length === 0 && alpacaMonitors.length === 0) {
+        container.innerHTML = '<p style="color: #999;">No monitors available. Create MQTT or Alpaca monitors first.</p>';
+        return;
+    }
+
+    let html = '';
+
+    if (mqttMonitors.length > 0) {
+        html += '<div style="margin-bottom: 10px;"><strong>MQTT Monitors:</strong></div>';
+        html += mqttMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="group-member-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    if (alpacaMonitors.length > 0) {
+        html += '<div style="margin: 10px 0;"><strong>Alpaca Monitors:</strong></div>';
+        html += alpacaMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="group-member-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    container.innerHTML = html;
+}
+
+function showAddMonitorGroup() {
+    currentEditId = null;
+    currentEditType = 'monitor-group';
+    document.getElementById('monitor-group-form').style.display = 'block';
+    document.getElementById('monitor-group-form-title').textContent = 'Add Monitor Group';
+    document.getElementById('group-id').value = '';
+    document.getElementById('group-id').disabled = false;
+    document.getElementById('group-name').value = '';
+    document.getElementById('group-description').value = '';
+    document.getElementById('group-logic').value = 'any';
+    document.getElementById('group-min-count').value = '2';
+    document.getElementById('group-min-count-group').style.display = 'none';
+    document.getElementById('group-enabled').checked = true;
+
+    populateGroupMembers();
+}
+
+function editMonitorGroup(id) {
+    const group = config.monitor_groups[id];
+    if (!group) return;
+
+    currentEditId = id;
+    currentEditType = 'monitor-group';
+    document.getElementById('monitor-group-form').style.display = 'block';
+    document.getElementById('monitor-group-form-title').textContent = 'Edit Monitor Group';
+    document.getElementById('group-id').value = group.id;
+    document.getElementById('group-id').disabled = true;
+    document.getElementById('group-name').value = group.name;
+    document.getElementById('group-description').value = group.description || '';
+    document.getElementById('group-enabled').checked = group.enabled !== false;
+
+    // Set logic
+    if (group.logic === 'any' || group.logic === 'all') {
+        document.getElementById('group-logic').value = group.logic;
+        document.getElementById('group-min-count-group').style.display = 'none';
+    } else if (group.logic && group.logic.min_of) {
+        document.getElementById('group-logic').value = 'min_of';
+        document.getElementById('group-min-count').value = group.logic.min_of.count;
+        document.getElementById('group-min-count-group').style.display = 'block';
+    }
+
+    populateGroupMembers();
+
+    // Check the selected members
+    setTimeout(() => {
+        const checkboxes = document.querySelectorAll('.group-member-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = group.members.includes(cb.value);
+        });
+    }, 0);
+}
+
+function cancelMonitorGroup() {
+    document.getElementById('monitor-group-form').style.display = 'none';
+    currentEditId = null;
+    currentEditType = null;
+}
+
+function saveMonitorGroup() {
+    const id = document.getElementById('group-id').value.trim();
+    const name = document.getElementById('group-name').value.trim();
+    const description = document.getElementById('group-description').value.trim();
+    const logicType = document.getElementById('group-logic').value;
+    const minCount = parseInt(document.getElementById('group-min-count').value);
+    const enabled = document.getElementById('group-enabled').checked;
+
+    // Get selected members
+    const checkboxes = document.querySelectorAll('.group-member-checkbox:checked');
+    const members = Array.from(checkboxes).map(cb => cb.value);
+
+    if (!id || !name) {
+        showNotification('Please fill in ID and Name', 'error');
+        return;
+    }
+
+    if (members.length === 0) {
+        showNotification('Please select at least one member monitor', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.monitor_groups[id]) {
+        showNotification('Group ID already exists', 'error');
+        return;
+    }
+
+    // Build logic object
+    let logic;
+    if (logicType === 'any' || logicType === 'all') {
+        logic = logicType;
+    } else if (logicType === 'min_of') {
+        if (minCount < 1 || minCount > members.length) {
+            showNotification(`Minimum count must be between 1 and ${members.length}`, 'error');
+            return;
+        }
+        logic = { min_of: { count: minCount } };
+    }
+
+    config.monitor_groups = config.monitor_groups || {};
+    config.monitor_groups[id] = {
+        id,
+        name,
+        description: description || null,
+        members,
+        logic,
+        enabled
+    };
+
+    saveConfig().then(success => {
+        if (success) {
+            cancelMonitorGroup();
+            renderMonitorGroups();
+            showNotification('Monitor group saved.', 'success');
+        }
+    });
+}
+
+function deleteMonitorGroup(id) {
+    if (!confirm(`Delete monitor group '${id}'?`)) return;
+
+    delete config.monitor_groups[id];
+    saveConfig().then(success => {
+        if (success) {
+            renderMonitorGroups();
+            showNotification('Monitor group deleted.', 'success');
+        }
+    });
+}
+
+// ============================================================================
+// Alpaca Discovery
+// ============================================================================
+
+async function scanForDevices() {
+    const statusEl = document.getElementById('discovery-status');
+    const container = document.getElementById('discovered-devices-list');
+
+    statusEl.textContent = 'Scanning...';
+    container.innerHTML = '<p style="text-align: center; color: #999;">Scanning network for Alpaca devices...</p>';
+
+    try {
+        const response = await fetch('/api/discovery/scan');
+        const devices = await response.json();
+
+        statusEl.textContent = `Found ${devices.length} device(s)`;
+
+        if (devices.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #999;">No Alpaca devices found on the network. Make sure your devices are powered on and connected.</p>';
+            return;
+        }
+
+        container.innerHTML = devices.map(device => {
+            const devicesHtml = device.devices.map(d => `
+                <div style="margin: 5px 0; padding: 5px; background: #f5f5f5; border-radius: 4px;">
+                    <strong>${escapeHtml(d.device_name)}</strong> (${escapeHtml(d.device_type)} #${d.device_number})
+                    <button class="btn btn-primary" style="float: right; font-size: 0.8em; padding: 2px 8px;" onclick="addDiscoveredDevice('${escapeHtml(device.host)}', ${device.port}, '${escapeHtml(d.device_type)}', ${d.device_number}, '${escapeHtml(d.device_name)}')">Add as Monitor</button>
+                </div>
+            `).join('');
+
+            return `
+                <div class="card" style="margin-bottom: 15px;">
+                    <h3>${escapeHtml(device.host)}:${device.port}</h3>
+                    <div style="margin-top: 10px;">
+                        ${device.devices.length > 0 ? devicesHtml : '<p style="color: #999;">No devices reported</p>'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        statusEl.textContent = 'Scan failed';
+        container.innerHTML = `<p style="text-align: center; color: #e74c3c;">Failed to scan: ${error.message}</p>`;
+        console.error('Discovery scan failed:', error);
+    }
+}
+
+async function probeHost() {
+    const host = document.getElementById('probe-host').value.trim();
+    const port = parseInt(document.getElementById('probe-port').value);
+    const resultEl = document.getElementById('probe-result');
+
+    if (!host || !port) {
+        showNotification('Please enter host and port', 'error');
+        return;
+    }
+
+    resultEl.innerHTML = '<p style="color: #999;">Probing...</p>';
+
+    try {
+        const response = await fetch('/api/discovery/probe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ host, port })
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            resultEl.innerHTML = `<p style="color: #e74c3c;">No Alpaca server found at ${host}:${port}</p>`;
+            return;
+        }
+
+        const device = await response.json();
+
+        const devicesHtml = device.devices.map(d => `
+            <div style="margin: 5px 0; padding: 5px; background: #f5f5f5; border-radius: 4px;">
+                <strong>${escapeHtml(d.device_name)}</strong> (${escapeHtml(d.device_type)} #${d.device_number})
+                <button class="btn btn-primary" style="float: right; font-size: 0.8em; padding: 2px 8px;" onclick="addDiscoveredDevice('${escapeHtml(device.host)}', ${device.port}, '${escapeHtml(d.device_type)}', ${d.device_number}, '${escapeHtml(d.device_name)}')">Add as Monitor</button>
+            </div>
+        `).join('');
+
+        resultEl.innerHTML = `
+            <div class="card" style="background: #e8f5e9;">
+                <h3>Found Alpaca Server at ${escapeHtml(device.host)}:${device.port}</h3>
+                <div style="margin-top: 10px;">
+                    ${device.devices.length > 0 ? devicesHtml : '<p style="color: #999;">No devices reported</p>'}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        resultEl.innerHTML = `<p style="color: #e74c3c;">Probe failed: ${error.message}</p>`;
+        console.error('Probe failed:', error);
+    }
+}
+
+function addDiscoveredDevice(host, port, deviceType, deviceNumber, deviceName) {
+    // Generate a unique ID from the device info
+    const id = `${deviceType.toLowerCase()}-${host.replace(/\./g, '-')}-${deviceNumber}`;
+    const name = `${deviceName} (${host})`;
+
+    // Pre-fill the Alpaca monitor form
+    currentEditId = null;
+    currentEditType = 'alpaca-monitor';
+    document.getElementById('alpaca-monitor-form').style.display = 'block';
+    document.getElementById('alpaca-monitor-id').value = id;
+    document.getElementById('alpaca-monitor-id').disabled = false;
+    document.getElementById('alpaca-monitor-name').value = name;
+    document.getElementById('alpaca-monitor-host').value = host;
+    document.getElementById('alpaca-monitor-port').value = port;
+    document.getElementById('alpaca-monitor-device-type').value = deviceType.toLowerCase();
+    document.getElementById('alpaca-monitor-device-number').value = deviceNumber;
+
+    // Set sensible defaults based on device type
+    if (deviceType.toLowerCase() === 'safetymonitor') {
+        document.getElementById('alpaca-monitor-property').value = 'issafe';
+        document.getElementById('alpaca-monitor-threshold').value = '1';
+        document.getElementById('alpaca-monitor-operator').value = 'equal';
+        document.getElementById('alpaca-monitor-safe-when-true').checked = true;
+    } else {
+        document.getElementById('alpaca-monitor-property').value = '';
+        document.getElementById('alpaca-monitor-threshold').value = '';
+    }
+
+    document.getElementById('alpaca-monitor-timeout').value = '300';
+    document.getElementById('alpaca-monitor-hold-time').value = '0';
+    document.getElementById('alpaca-monitor-include-in-safety').checked = true;
+
+    // Switch to the Alpaca Monitors tab
+    switchTab('alpaca-monitors');
+    showNotification('Device added to form. Please review settings and click Save.', 'success');
 }
