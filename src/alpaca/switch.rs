@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
@@ -78,13 +79,16 @@ pub async fn get_maxswitch(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<i32>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<i32>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     let switch_manager = state.switch_manager.read().await;
@@ -108,13 +112,16 @@ pub async fn get_canwrite(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<bool>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<bool>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -160,13 +167,16 @@ pub async fn get_switch(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<bool>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<bool>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {
@@ -225,13 +235,16 @@ pub async fn get_switchname(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -279,13 +292,16 @@ pub async fn get_switchdescription(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -342,13 +358,16 @@ pub async fn get_switchvalue(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<f64>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<f64>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {
@@ -408,13 +427,16 @@ pub async fn get_minswitchvalue(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<f64>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<f64>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -458,13 +480,16 @@ pub async fn get_maxswitchvalue(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<f64>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<f64>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -508,13 +533,16 @@ pub async fn get_switchstep(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<f64>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<f64>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if params.id < 0 {
@@ -555,16 +583,16 @@ pub async fn get_switchstep(
 /// PUT request for SetSwitch
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid")]
+    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
     #[serde(rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
+    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "State", alias = "state")]
+    #[serde(alias = "State", alias = "state", alias = "STATE")]
     #[serde(rename = "State")]
     pub state: String,
 }
@@ -572,16 +600,16 @@ pub struct SetSwitchRequest {
 /// PUT request for SetSwitchValue
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchValueRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid")]
+    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
     #[serde(rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
+    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "Value", alias = "value")]
+    #[serde(alias = "Value", alias = "value", alias = "VALUE")]
     #[serde(rename = "Value")]
     pub value: f64,
 }
@@ -589,16 +617,16 @@ pub struct SetSwitchValueRequest {
 /// PUT request for SetSwitchName
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchNameRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid")]
+    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
     #[serde(rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
+    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "Name", alias = "name")]
+    #[serde(alias = "Name", alias = "name", alias = "NAME")]
     #[serde(rename = "Name")]
     pub name: String,
 }
@@ -612,13 +640,16 @@ pub async fn put_setswitch(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<()>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<()>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     // Validate switch ID
@@ -664,13 +695,16 @@ pub async fn put_setswitchvalue(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<()>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<()>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     // Validate switch ID
@@ -716,13 +750,16 @@ pub async fn put_setswitchname(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<()>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<()>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     // Validate switch ID
@@ -772,13 +809,16 @@ pub async fn get_connected(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<bool>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<bool>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -798,13 +838,16 @@ pub async fn put_connected(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<()>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<()>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     *state.switch_device.connected.write() = request.connected;
@@ -826,13 +869,16 @@ pub async fn get_name(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -852,13 +898,16 @@ pub async fn get_description(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -878,13 +927,16 @@ pub async fn get_driverinfo(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -904,13 +956,16 @@ pub async fn get_driverversion(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -930,13 +985,16 @@ pub async fn get_interfaceversion(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<i32>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<i32>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     // ISwitchV2 interface version
@@ -957,13 +1015,16 @@ pub async fn get_supportedactions(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<Vec<String>>::error(
-            params.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<Vec<String>>::error(
+                params.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     Json(AlpacaResponse::success(
@@ -983,13 +1044,16 @@ pub async fn put_action(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {
@@ -1020,13 +1084,16 @@ pub async fn put_commandblind(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<()>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<()>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {
@@ -1057,13 +1124,16 @@ pub async fn put_commandbool(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<bool>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<bool>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {
@@ -1094,13 +1164,16 @@ pub async fn put_commandstring(
     let server_id = state.switch_device.next_transaction_id();
 
     if device != 0 {
-        return Json(AlpacaResponse::<String>::error(
-            request.client_transaction_i_d,
-            server_id,
-            0x400,
-            "Invalid device number".to_string(),
-        ))
-        .into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(AlpacaResponse::<String>::error(
+                request.client_transaction_i_d,
+                server_id,
+                0x400,
+                "Invalid device number".to_string(),
+            )),
+        )
+            .into_response();
     }
 
     if !state.switch_device.is_connected() {

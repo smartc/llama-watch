@@ -158,7 +158,7 @@ pub struct SwitchQueryParams {
     #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
 }
