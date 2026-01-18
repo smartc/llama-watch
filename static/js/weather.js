@@ -319,17 +319,17 @@ function renderWeatherStatus(statuses) {
         return;
     }
 
-    // Define consistent measurement order
+    // Define consistent measurement order - keys must match backend
     const measurementOrder = [
-        'temperature',
-        'humidity',
-        'dew_point',
-        'pressure',
-        'wind_speed',
-        'wind_gust',
-        'wind_direction',
-        'rain_rate',
-        'sky_brightness'
+        'Temperature',
+        'Humidity',
+        'Dew Point',
+        'Pressure',
+        'Wind Speed',
+        'Wind Gust',
+        'Wind Direction',
+        'Rain Rate',
+        'Sky Brightness'
     ];
 
     container.innerHTML = statuses.map(status => {
