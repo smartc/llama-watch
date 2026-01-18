@@ -47,6 +47,8 @@ pub struct MqttMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
+    #[serde(default = "default_include_in_safety")]
+    pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +69,8 @@ pub struct AlpacaMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
+    #[serde(default = "default_include_in_safety")]
+    pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
 }
 
 fn default_timeout() -> u64 {
@@ -77,12 +81,40 @@ fn default_enabled() -> bool {
     true
 }
 
+fn default_include_in_safety() -> bool {
+    true
+}
+
 fn default_server_interface() -> String {
     "127.0.0.1".to_string()
 }
 
 fn default_udp_port() -> u16 {
     50222
+}
+
+/// Configuration for the ASCOM Switch device
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchDeviceConfig {
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub name: Option<String>, // Device name (defaults to "LLAMA Switch Device")
+    #[serde(default)]
+    pub description: Option<String>, // Device description
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool, // If true, device starts connected
+}
+
+impl Default for SwitchDeviceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            name: None,
+            description: None,
+            auto_connect: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -95,6 +127,10 @@ pub struct AppConfig {
     pub alpaca_monitors: HashMap<String, AlpacaMonitorConfig>,
     #[serde(default)]
     pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Key is device_number
+    #[serde(default)]
+    pub switches: HashMap<String, SwitchConfig>, // Explicit switch definitions with aggregation
+    #[serde(default)]
+    pub switch_device: SwitchDeviceConfig, // ASCOM Switch device configuration
     #[serde(default)]
     pub server_port: u16,
     #[serde(default = "default_server_interface")]
@@ -122,6 +158,8 @@ impl AppConfig {
             mqtt_monitors: HashMap::new(),
             alpaca_monitors: HashMap::new(),
             weather_devices: HashMap::new(),
+            switches: HashMap::new(),
+            switch_device: SwitchDeviceConfig::default(),
             server_port: 8080,
             server_interface: default_server_interface(),
             tempest_udp_port: default_udp_port(),
@@ -141,6 +179,44 @@ impl AppConfig {
                 ));
             }
         }
+
+        // Validate that all switch sources reference valid monitors
+        for switch in self.switches.values() {
+            if switch.sources.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Switch '{}' has no sources defined",
+                    switch.id
+                ));
+            }
+
+            for source_id in &switch.sources {
+                let mqtt_exists = self.mqtt_monitors.contains_key(source_id);
+                let alpaca_exists = self.alpaca_monitors.contains_key(source_id);
+                if !mqtt_exists && !alpaca_exists {
+                    return Err(anyhow::anyhow!(
+                        "Switch '{}' references non-existent monitor '{}'",
+                        switch.id, source_id
+                    ));
+                }
+            }
+
+            // Validate MinOf logic has a reasonable count
+            if let SwitchLogic::MinOf { count } = &switch.logic {
+                if *count == 0 {
+                    return Err(anyhow::anyhow!(
+                        "Switch '{}' has min_of count of 0, which would always trigger",
+                        switch.id
+                    ));
+                }
+                if *count > switch.sources.len() as u32 {
+                    return Err(anyhow::anyhow!(
+                        "Switch '{}' has min_of count {} but only {} sources",
+                        switch.id, count, switch.sources.len()
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -160,6 +236,7 @@ pub struct MonitorStatus {
     pub hold_time_seconds: u64,
     pub pending_is_safe: Option<bool>,
     pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
+    pub include_in_safety: bool,
 }
 
 // Weather device configuration
@@ -222,4 +299,106 @@ pub struct ThresholdConfig {
 
 fn default_auto_connect() -> bool {
     true
+}
+
+/// Logic for combining multiple sources into a single switch
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SwitchLogic {
+    /// OR logic - switch is triggered if ANY source is triggered (unsafe/true)
+    Any,
+    /// AND logic - switch is triggered only if ALL sources are triggered (unsafe/true)
+    All,
+    /// N-out-of-M logic - switch is triggered if at least N sources are triggered
+    #[serde(rename = "min_of")]
+    MinOf { count: u32 },
+}
+
+impl Default for SwitchLogic {
+    fn default() -> Self {
+        SwitchLogic::Any
+    }
+}
+
+impl SwitchLogic {
+    /// Evaluate the logic given a list of source states (true = triggered/unsafe)
+    pub fn evaluate(&self, source_states: &[bool]) -> bool {
+        if source_states.is_empty() {
+            return false;
+        }
+
+        let triggered_count = source_states.iter().filter(|&&s| s).count() as u32;
+
+        match self {
+            SwitchLogic::Any => triggered_count > 0,
+            SwitchLogic::All => triggered_count == source_states.len() as u32,
+            SwitchLogic::MinOf { count } => triggered_count >= *count,
+        }
+    }
+
+    /// Get a human-readable description of the logic
+    pub fn description(&self) -> String {
+        match self {
+            SwitchLogic::Any => "ANY source triggered".to_string(),
+            SwitchLogic::All => "ALL sources triggered".to_string(),
+            SwitchLogic::MinOf { count } => format!("at least {} sources triggered", count),
+        }
+    }
+}
+
+/// Configuration for an explicit switch that aggregates multiple monitor sources
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// List of monitor IDs to aggregate (can reference MQTT or Alpaca monitors)
+    pub sources: Vec<String>,
+    /// How to combine source states
+    #[serde(default)]
+    pub logic: SwitchLogic,
+    /// Timeout for the aggregated switch (sources without data within this time are considered unsafe)
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u64,
+    /// Hold time for state transitions (prevents flapping)
+    #[serde(default)]
+    pub hold_time_seconds: u64,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+/// Status of an aggregated switch
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchStatus {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    /// Current state: true = triggered (unsafe condition detected)
+    pub is_triggered: bool,
+    /// The logic used to combine sources
+    pub logic: SwitchLogic,
+    /// Status of each source
+    pub source_states: Vec<SwitchSourceStatus>,
+    /// Pending state change (during hold time)
+    pub pending_is_triggered: Option<bool>,
+    pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
+    pub hold_time_seconds: u64,
+    /// Error if any source is missing or timed out
+    pub error: Option<String>,
+    pub enabled: bool,
+    pub last_update: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Status of a single source within a switch
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchSourceStatus {
+    pub monitor_id: String,
+    pub monitor_name: String,
+    /// true = this source is triggered (condition met that would make it unsafe)
+    pub is_triggered: bool,
+    pub current_value: Option<f64>,
+    pub threshold: f64,
+    pub last_update: Option<chrono::DateTime<chrono::Utc>>,
+    pub error: Option<String>,
 }

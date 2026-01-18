@@ -14,6 +14,7 @@ use crate::{
     config::{models::AppConfig, save_config},
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
+    switches::SharedSwitchManager,
     weather::{WeatherMonitorManager, ObservingConditionsDevice, tempest::TempestData},
 };
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ pub type SharedConfig = Arc<RwLock<AppConfig>>;
 pub struct WebState {
     pub config: SharedConfig,
     pub monitor_state: Arc<RwLock<MonitorState>>,
+    pub switch_manager: Option<SharedSwitchManager>,
     pub debug_logger: Arc<DebugLogger>,
     pub safety_monitor: Arc<SafetyMonitor>,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
@@ -61,6 +63,12 @@ pub async fn update_config(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
     }
     drop(monitor_state); // Release lock
+
+    // Reload switches with new configuration
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&new_config);
+    }
 
     // Update in-memory configuration
     *state.config.write().await = new_config;
@@ -104,6 +112,7 @@ pub async fn get_status(
                 hold_time_seconds: mqtt_config.hold_time_seconds,
                 pending_is_safe: None,
                 pending_since: None,
+                include_in_safety: mqtt_config.include_in_safety,
             });
             active_ids.insert(id.clone());
         }
@@ -126,6 +135,7 @@ pub async fn get_status(
                 hold_time_seconds: alpaca_config.hold_time_seconds,
                 pending_is_safe: None,
                 pending_since: None,
+                include_in_safety: alpaca_config.include_in_safety,
             });
         }
     }
@@ -133,10 +143,19 @@ pub async fn get_status(
     // Sort monitors alphabetically by name for consistent display order
     statuses.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
+    // Get switch statuses if switch manager is available
+    let switches = if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.get_all_statuses().await
+    } else {
+        Vec::new()
+    };
+
     Json(serde_json::json!({
         "is_safe": is_safe,
         "is_connected": is_connected,
         "monitors": statuses,
+        "switches": switches,
     }))
 }
 
@@ -170,6 +189,13 @@ pub async fn toggle_mqtt_monitor(
     if let Err(e) = monitor_state.reload(&config).await {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
     }
+    drop(monitor_state);
+
+    // Reload switches
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&config);
+    }
 
     Ok(StatusCode::OK)
 }
@@ -198,6 +224,13 @@ pub async fn toggle_alpaca_monitor(
     let mut monitor_state = state.monitor_state.write().await;
     if let Err(e) = monitor_state.reload(&config).await {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+    drop(monitor_state);
+
+    // Reload switches
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&config);
     }
 
     Ok(StatusCode::OK)
@@ -390,6 +423,7 @@ pub struct MeasurementInfo {
     pub value: f64,
     pub threshold: f64,
     pub is_safe: bool,
+    pub is_monitored: bool, // Whether this measurement is included in safety determination
     pub timeout_seconds: Option<u64>,
     pub last_update: Option<String>,
 }
@@ -642,14 +676,14 @@ pub async fn get_weather_status(
             // Helper function to add a measurement
             let mut add_measurement = |key: &str, name: &str, value: f64| {
                 // Check if this measurement is being monitored for safety
-                let (threshold, is_safe, timeout_seconds) = if let Some(status) = safety_status {
+                let (threshold, is_safe, is_monitored, timeout_seconds) = if let Some(status) = safety_status {
                     if let Some(m) = status.measurements.get(key) {
-                        (m.threshold, m.is_safe, m.timeout_seconds)
+                        (m.threshold, m.is_safe, true, m.timeout_seconds)
                     } else {
-                        (0.0, true, None) // Not monitored
+                        (0.0, true, false, None) // Not monitored
                     }
                 } else {
-                    (0.0, true, None) // No safety monitoring
+                    (0.0, true, false, None) // No safety monitoring configured
                 };
 
                 measurements.insert(key.to_string(), MeasurementInfo {
@@ -657,18 +691,20 @@ pub async fn get_weather_status(
                     value,
                     threshold,
                     is_safe,
+                    is_monitored,
                     timeout_seconds,
                     last_update: Some(last_update_str.clone()),
                 });
             };
 
             // Add all available measurements
-            add_measurement("temperature", "Temperature (°C)", obs.temperature);
-            add_measurement("humidity", "Humidity (%)", obs.humidity);
-            add_measurement("pressure", "Pressure (MB)", obs.pressure);
-            add_measurement("wind_speed", "Wind Speed (m/s)", obs.wind_avg);
-            add_measurement("wind_gust", "Wind Gust (m/s)", obs.wind_gust);
-            add_measurement("wind_direction", "Wind Direction (°)", obs.wind_direction);
+            // Keys must match those used in weather_monitor.rs for safety threshold lookups
+            add_measurement("Temperature", "Temperature (°C)", obs.temperature);
+            add_measurement("Humidity", "Humidity (%)", obs.humidity);
+            add_measurement("Pressure", "Pressure (MB)", obs.pressure);
+            add_measurement("Wind Speed", "Wind Speed (m/s)", obs.wind_avg);
+            add_measurement("Wind Gust", "Wind Gust (m/s)", obs.wind_gust);
+            add_measurement("Wind Direction", "Wind Direction (°)", obs.wind_direction);
 
             // Calculate rain rate (mm/hour)
             let rain_rate = if let Some(prev_obs) = tempest_data.previous_observations.get(&obs.serial_number) {
@@ -676,15 +712,15 @@ pub async fn get_weather_status(
             } else {
                 0.0
             };
-            add_measurement("rain_rate", "Rain Rate (mm/hr)", rain_rate);
+            add_measurement("Rain Rate", "Rain Rate (mm/hr)", rain_rate);
 
             // Calculate dew point
             let dew_point = calculate_dew_point(obs.temperature, obs.humidity);
-            add_measurement("dew_point", "Dew Point (°C)", dew_point);
+            add_measurement("Dew Point", "Dew Point (°C)", dew_point);
 
             // Convert illuminance to sky brightness (mag/arcsec²)
             let sky_brightness = lux_to_sky_brightness(obs.illuminance);
-            add_measurement("sky_brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
+            add_measurement("Sky Brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
         }
 
         // Determine overall safety status

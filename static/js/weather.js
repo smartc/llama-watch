@@ -319,17 +319,17 @@ function renderWeatherStatus(statuses) {
         return;
     }
 
-    // Define consistent measurement order
+    // Define consistent measurement order - keys must match backend
     const measurementOrder = [
-        'temperature',
-        'humidity',
-        'dew_point',
-        'pressure',
-        'wind_speed',
-        'wind_gust',
-        'wind_direction',
-        'rain_rate',
-        'sky_brightness'
+        'Temperature',
+        'Humidity',
+        'Dew Point',
+        'Pressure',
+        'Wind Speed',
+        'Wind Gust',
+        'Wind Direction',
+        'Rain Rate',
+        'Sky Brightness'
     ];
 
     container.innerHTML = statuses.map(status => {
@@ -348,11 +348,14 @@ function renderWeatherStatus(statuses) {
         if (sortedMeasurements.length > 0) {
             measurementsHtml = '<div class="measurements-grid">' +
                 sortedMeasurements.map(m => {
-                    const mClass = m.is_safe ? 'safe' : 'unsafe';
+                    const mClass = m.is_monitored ? (m.is_safe ? 'safe' : 'unsafe') : '';
+                    const thresholdHtml = m.is_monitored
+                        ? '<span class="measurement-threshold">Threshold: ' + m.threshold.toFixed(1) + '</span>'
+                        : '';
                     return '<div class="measurement ' + mClass + '">' +
                         '<span class="measurement-name">' + m.name + '</span>' +
                         '<span class="measurement-value">' + m.value.toFixed(1) + '</span>' +
-                        '<span class="measurement-threshold">Threshold: ' + m.threshold.toFixed(1) + '</span>' +
+                        thresholdHtml +
                         '</div>';
                 }).join('') +
                 '</div>';

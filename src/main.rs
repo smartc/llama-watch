@@ -2,6 +2,7 @@ mod alpaca;
 mod config;
 mod logging;
 mod monitors;
+mod switches;
 mod web;
 mod weather;
 
@@ -17,9 +18,11 @@ use alpaca::discovery::DiscoveryService;
 use alpaca::safety_monitor::{AppState, SafetyMonitor};
 use alpaca::observing_conditions::ObservingConditionsAppState;
 use alpaca::management::ManagementState;
+use alpaca::{SwitchDevice, SwitchAppState};
 use config::load_config;
 use logging::DebugLogger;
 use monitors::MonitorState;
+use switches::SwitchManager;
 use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor};
 use web::handlers::WebState;
 use std::collections::HashMap;
@@ -39,11 +42,12 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = load_config().await?;
     info!(
-        "Loaded configuration: {} MQTT servers, {} MQTT monitors, {} Alpaca monitors, {} weather devices",
+        "Loaded configuration: {} MQTT servers, {} MQTT monitors, {} Alpaca monitors, {} weather devices, {} switches",
         config.mqtt_servers.len(),
         config.mqtt_monitors.len(),
         config.alpaca_monitors.len(),
-        config.weather_devices.len()
+        config.weather_devices.len(),
+        config.switches.len()
     );
 
     let server_port = if config.server_port > 0 {
@@ -132,17 +136,44 @@ async fn main() -> Result<()> {
         weather_data: weather_data_accessor.clone(),
     });
 
+    // Create Switch device and manager (if enabled)
+    let (switch_device, switch_manager) = if config.switch_device.enabled {
+        let device = Arc::new(SwitchDevice::new(&config.switch_device));
+        info!("🔘 Switch device created: {}", device.device_name);
+
+        // Initialize switch manager with configured switches
+        let mut manager = SwitchManager::new(shared_monitor_state.clone());
+        manager.initialize(&config);
+        info!("🔘 Switch manager initialized with {} switches", manager.get_switch_count());
+
+        let shared_manager = Arc::new(RwLock::new(manager));
+        (Some(device), Some(shared_manager))
+    } else {
+        (None, None)
+    };
+
+    // Create Switch application state (if switch device is enabled)
+    let switch_app_state = match (&switch_device, &switch_manager) {
+        (Some(device), Some(manager)) => Some(Arc::new(SwitchAppState {
+            switch_device: device.clone(),
+            switch_manager: manager.clone(),
+        })),
+        _ => None,
+    };
+
     // Create management state for management API endpoints
     let management_state = Arc::new(ManagementState {
         safety_monitor: safety_monitor.clone(),
         monitor_state: shared_monitor_state.clone(),
         oc_devices: oc_devices_shared.clone(),
+        switch_device: switch_device.clone(),
     });
 
     // Create web state for configuration management
     let web_state = Arc::new(WebState {
         config: Arc::new(RwLock::new(config)),
         monitor_state: shared_monitor_state.clone(),
+        switch_manager: switch_manager.clone(),
         debug_logger: debug_logger.clone(),
         safety_monitor: safety_monitor.clone(),
         oc_devices: oc_devices_shared.clone(),
@@ -174,11 +205,17 @@ async fn main() -> Result<()> {
     });
 
     // Build router
-    let app = axum::Router::new()
+    let mut app = axum::Router::new()
         .merge(alpaca::create_management_router(management_state))
         .merge(alpaca::create_router(alpaca_state))
-        .merge(alpaca::create_observingconditions_router(oc_app_state))
-        .merge(web::create_router(web_state));
+        .merge(alpaca::create_observingconditions_router(oc_app_state));
+
+    // Add Switch router if enabled
+    if let Some(switch_state) = switch_app_state {
+        app = app.merge(alpaca::create_switch_router(switch_state));
+    }
+
+    let app = app.merge(web::create_router(web_state));
 
     // Start ASCOM Alpaca discovery service
     let discovery = Arc::new(DiscoveryService::new(
@@ -194,6 +231,9 @@ async fn main() -> Result<()> {
     info!("📊 Web UI available at http://localhost:{}", server_port);
     info!("🔌 ASCOM Alpaca SafetyMonitor API: http://localhost:{}/api/v1/safetymonitor/0/", server_port);
     info!("🌤️  ASCOM Alpaca ObservingConditions API: http://localhost:{}/api/v1/observingconditions/{{device}}/", server_port);
+    if switch_device.is_some() {
+        info!("🔘 ASCOM Alpaca Switch API: http://localhost:{}/api/v1/switch/0/", server_port);
+    }
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

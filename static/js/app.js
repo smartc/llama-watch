@@ -3,6 +3,13 @@ let config = {
     mqtt_servers: {},
     mqtt_monitors: {},
     alpaca_monitors: {},
+    switches: {},
+    switch_device: {
+        enabled: true,
+        name: null,
+        description: null,
+        auto_connect: true
+    },
     server_port: 8080,
     device_name: "LLAMA Safety Monitor",
     location: "",
@@ -41,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Handle hash navigation (for setup redirects)
     if (window.location.hash) {
         const tabName = window.location.hash.substring(1);
-        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'settings'];
+        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'switches', 'weather-devices', 'settings'];
         if (validTabs.includes(tabName)) {
             switchTab(tabName);
         }
@@ -142,9 +149,93 @@ async function refreshStatus() {
 
         // Update status list
         renderMonitorStatus(status.monitors);
+
+        // Update switch status list
+        renderSwitchStatus(status.switches || []);
+
+        // Fetch and render weather status
+        try {
+            const weatherResponse = await fetch('/api/weather/status');
+            const weatherStatus = await weatherResponse.json();
+            renderWeatherStatus(weatherStatus);
+        } catch (err) {
+            console.error('Failed to fetch weather status:', err);
+        }
     } catch (error) {
         console.error('Failed to refresh status:', error);
     }
+}
+
+// Render weather status
+function renderWeatherStatus(weatherDevices) {
+    const container = document.getElementById('weather-status-list');
+
+    if (!weatherDevices || weatherDevices.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No weather devices configured</p>';
+        return;
+    }
+
+    container.innerHTML = weatherDevices.map(device => {
+        const statusClass = device.enabled ? (device.is_safe ? 'safe' : 'unsafe') : 'disabled';
+        const statusText = device.enabled ? (device.is_safe ? 'SAFE' : 'UNSAFE') : 'DISABLED';
+        const lastUpdate = device.last_update
+            ? new Date(device.last_update).toLocaleString()
+            : 'Never';
+
+        // Build measurements table
+        const measurements = Object.entries(device.measurements || {}).map(([key, m]) => {
+            let measurementClass = '';
+            let statusIndicator = '';
+
+            if (m.is_monitored) {
+                measurementClass = m.is_safe ? 'measurement-safe' : 'measurement-unsafe';
+                statusIndicator = m.is_safe
+                    ? '<span style="color: #27ae60; font-weight: bold;">✓</span>'
+                    : '<span style="color: #e74c3c; font-weight: bold;">✗</span>';
+            } else {
+                measurementClass = 'measurement-unmonitored';
+                statusIndicator = '<span style="color: #95a5a6;">—</span>';
+            }
+
+            const thresholdDisplay = m.is_monitored ? m.threshold.toFixed(2) : '—';
+
+            return `
+                <tr class="${measurementClass}">
+                    <td>${m.name}</td>
+                    <td style="text-align: right;">${m.value.toFixed(2)}</td>
+                    <td style="text-align: right;">${thresholdDisplay}</td>
+                    <td style="text-align: center;">${statusIndicator}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="status-card ${statusClass}">
+                <div class="status-header">
+                    <span class="status-name">${device.name}</span>
+                    <span class="status-badge ${statusClass}">${statusText}</span>
+                </div>
+                <div class="status-details">
+                    <div><strong>Device:</strong> Weather Device ${device.device_number}</div>
+                    <div><strong>Last Update:</strong> ${lastUpdate}</div>
+                    ${device.error ? `<div style="color: #e74c3c;"><strong>Error:</strong> ${device.error}</div>` : ''}
+                </div>
+                <table class="measurements-table" style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <th style="text-align: left; padding: 5px;">Measurement</th>
+                            <th style="text-align: right; padding: 5px;">Value</th>
+                            <th style="text-align: right; padding: 5px;">Threshold</th>
+                            <th style="text-align: center; padding: 5px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${measurements}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }).join('');
 }
 
 // Render all
@@ -152,7 +243,9 @@ function renderAll() {
     renderMqttServers();
     renderMqttMonitors();
     renderAlpacaMonitors();
+    renderSwitches();
     renderSettings();
+    renderSwitchDeviceSettings();
 }
 
 // Render monitor status
@@ -432,6 +525,13 @@ function showAddMqttMonitor() {
     document.getElementById('mqtt-monitor-safe-when-true').checked = true;
     document.getElementById('mqtt-monitor-timeout').value = '300';
     document.getElementById('mqtt-monitor-hold-time').value = '0';
+    // Switch integration fields
+    document.getElementById('mqtt-monitor-include-in-safety').checked = true;
+    document.getElementById('mqtt-monitor-include-in-switch').checked = false;
+    document.getElementById('mqtt-monitor-switch-name').value = '';
+    document.getElementById('mqtt-monitor-switch-timeout').value = '';
+    document.getElementById('mqtt-monitor-switch-hold-time').value = '';
+    document.getElementById('mqtt-switch-fields').style.display = 'none';
 }
 
 function editMqttMonitor(id) {
@@ -453,6 +553,8 @@ function editMqttMonitor(id) {
     document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('mqtt-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('mqtt-monitor-hold-time').value = monitor.hold_time_seconds || 0;
+    const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
+    document.getElementById('mqtt-monitor-include-in-safety').checked = includeInSafety;
 }
 
 function cancelMqttMonitor() {
@@ -472,6 +574,7 @@ function saveMqttMonitor() {
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('mqtt-monitor-hold-time').value);
+    const include_in_safety = document.getElementById('mqtt-monitor-include-in-safety').checked;
 
     if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -484,18 +587,24 @@ function saveMqttMonitor() {
         return;
     }
 
+    // Preserve enabled state when editing
+    const existingEnabled = currentEditId && config.mqtt_monitors[currentEditId]
+        ? config.mqtt_monitors[currentEditId].enabled
+        : true;
+
     config.mqtt_monitors[id] = {
         id,
         name,
         server_id,
         topic,
-        json_path: json_path_raw || null, // null for raw values, string for JSON path
+        json_path: json_path_raw || null,
         threshold,
         operator,
         safe_when_true,
         timeout_seconds,
         hold_time_seconds,
-        enabled: true // New monitors are enabled by default
+        enabled: existingEnabled,
+        include_in_safety
     };
 
     saveConfig().then(success => {
@@ -559,6 +668,7 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
     document.getElementById('alpaca-monitor-timeout').value = '300';
     document.getElementById('alpaca-monitor-hold-time').value = '0';
+    document.getElementById('alpaca-monitor-include-in-safety').checked = true;
 }
 
 function editAlpacaMonitor(id) {
@@ -581,6 +691,8 @@ function editAlpacaMonitor(id) {
     document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('alpaca-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('alpaca-monitor-hold-time').value = monitor.hold_time_seconds || 0;
+    const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
+    document.getElementById('alpaca-monitor-include-in-safety').checked = includeInSafety;
 }
 
 function cancelAlpacaMonitor() {
@@ -602,6 +714,7 @@ function saveAlpacaMonitor() {
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('alpaca-monitor-hold-time').value);
+    const include_in_safety = document.getElementById('alpaca-monitor-include-in-safety').checked;
 
     if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -613,6 +726,11 @@ function saveAlpacaMonitor() {
         showNotification('Monitor ID already exists', 'error');
         return;
     }
+
+    // Preserve enabled state when editing
+    const existingEnabled = currentEditId && config.alpaca_monitors[currentEditId]
+        ? config.alpaca_monitors[currentEditId].enabled
+        : true;
 
     config.alpaca_monitors[id] = {
         id,
@@ -627,7 +745,8 @@ function saveAlpacaMonitor() {
         safe_when_true,
         timeout_seconds,
         hold_time_seconds,
-        enabled: true // New monitors are enabled by default
+        enabled: existingEnabled,
+        include_in_safety
     };
 
     saveConfig().then(success => {
@@ -664,6 +783,41 @@ function saveSettings() {
     saveConfig().then(success => {
         if (success) {
             showNotification('Settings saved. Note: Server port and location changes require restart.', 'success');
+        }
+    });
+}
+
+// Switch Device Settings
+function renderSwitchDeviceSettings() {
+    const switchDevice = config.switch_device || {
+        enabled: true,
+        name: null,
+        description: null,
+        auto_connect: true
+    };
+
+    document.getElementById('switch-device-enabled').checked = switchDevice.enabled !== false;
+    document.getElementById('switch-device-name').value = switchDevice.name || '';
+    document.getElementById('switch-device-description').value = switchDevice.description || '';
+    document.getElementById('switch-device-auto-connect').checked = switchDevice.auto_connect !== false;
+}
+
+function saveSwitchDeviceSettings() {
+    const enabled = document.getElementById('switch-device-enabled').checked;
+    const name = document.getElementById('switch-device-name').value.trim();
+    const description = document.getElementById('switch-device-description').value.trim();
+    const auto_connect = document.getElementById('switch-device-auto-connect').checked;
+
+    config.switch_device = {
+        enabled,
+        name: name || null,
+        description: description || null,
+        auto_connect
+    };
+
+    saveConfig().then(success => {
+        if (success) {
+            showNotification('Switch device settings saved. Changes take effect after reload.', 'success');
         }
     });
 }
@@ -768,6 +922,15 @@ async function autoConnectDevices() {
             }
         }
 
+        // Connect switch device if auto_connect enabled
+        if (config.switch_device && config.switch_device.enabled && config.switch_device.auto_connect) {
+            await fetch('/api/v1/switch/0/connected', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'Connected=true'
+            });
+        }
+
         console.log('Auto-connected ASCOM devices');
     } catch (error) {
         console.error('Failed to auto-connect devices:', error);
@@ -820,4 +983,339 @@ function showNotification(message, type) {
     setTimeout(() => {
         notification.remove();
     }, 3000);
+}
+
+// ============================================================================
+// Switch Status Display
+// ============================================================================
+
+function renderSwitchStatus(switches) {
+    const container = document.getElementById('switches-status-list');
+    const section = document.getElementById('switches-status-section');
+
+    if (!switches || switches.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+
+    container.innerHTML = switches.map(sw => {
+        const statusClass = sw.enabled ? (sw.is_triggered ? 'unsafe' : 'safe') : 'disabled';
+        const statusText = sw.enabled ? (sw.is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED') : 'DISABLED';
+        const lastUpdate = sw.last_update
+            ? new Date(sw.last_update).toLocaleString()
+            : 'Never';
+
+        // Format logic description
+        let logicText = '';
+        if (sw.logic === 'any') {
+            logicText = 'ANY source triggered (OR)';
+        } else if (sw.logic === 'all') {
+            logicText = 'ALL sources triggered (AND)';
+        } else if (sw.logic && sw.logic.min_of) {
+            logicText = `At least ${sw.logic.min_of.count} of ${sw.source_states.length} sources`;
+        }
+
+        // Calculate pending state info
+        let pendingInfo = '';
+        if (sw.pending_is_triggered !== null && sw.pending_is_triggered !== undefined && sw.pending_since) {
+            const pendingSince = new Date(sw.pending_since);
+            const now = new Date();
+            const elapsedSeconds = Math.floor((now - pendingSince) / 1000);
+            const remainingSeconds = Math.max(0, sw.hold_time_seconds - elapsedSeconds);
+
+            const currentStateText = sw.is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED';
+            const pendingStateText = sw.pending_is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED';
+            const pendingClass = sw.pending_is_triggered ? 'unsafe' : 'safe';
+
+            pendingInfo = `
+                <div class="card-row" style="grid-column: 1 / -1;">
+                    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 8px; border-radius: 4px;">
+                        <strong>⏱ Pending Change:</strong> ${currentStateText} → <span class="${pendingClass}">${pendingStateText}</span>
+                        <br>
+                        <span style="font-size: 0.9em;">Countdown: ${remainingSeconds}s remaining (hold time: ${sw.hold_time_seconds}s)</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format source states
+        const sourcesHtml = sw.source_states.map(source => {
+            const sourceClass = source.is_triggered ? 'unsafe' : 'safe';
+            const sourceIcon = source.is_triggered ? '⚠' : '✓';
+            return `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                    <span class="status-indicator ${sourceClass}" style="width: 10px; height: 10px;"></span>
+                    <span>${sourceIcon} ${escapeHtml(source.monitor_name)}</span>
+                    ${source.current_value !== null ? `<span style="color: #666;">(${source.current_value.toFixed(2)})</span>` : ''}
+                    ${source.error ? `<span style="color: #f44336; font-size: 0.85em;">[${escapeHtml(source.error)}]</span>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="card ${statusClass}">
+                <h3>
+                    <span class="status-indicator ${statusClass}"></span>
+                    ${escapeHtml(sw.name)}
+                </h3>
+                <div class="card-grid">
+                    <div class="card-row">
+                        <span class="card-label">Status:</span>
+                        <span class="${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Logic:</span>
+                        <span>${logicText}</span>
+                    </div>
+                    ${pendingInfo}
+                    <div class="card-row">
+                        <span class="card-label">Last Update:</span>
+                        <span>${lastUpdate}</span>
+                    </div>
+                    ${sw.hold_time_seconds > 0 ? `
+                    <div class="card-row">
+                        <span class="card-label">Hold Time:</span>
+                        <span>${sw.hold_time_seconds}s</span>
+                    </div>
+                    ` : ''}
+                    ${sw.error ? `
+                    <div class="card-row">
+                        <span class="card-label">Error:</span>
+                        <span style="color: #f44336;">${escapeHtml(sw.error)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="card-row" style="grid-column: 1 / -1;">
+                        <span class="card-label">Sources (${sw.source_states.length}):</span>
+                        <div style="margin-top: 4px;">
+                            ${sourcesHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ============================================================================
+// Switch Configuration
+// ============================================================================
+
+function renderSwitches() {
+    const container = document.getElementById('switches-list');
+    const switches = Object.values(config.switches || {});
+
+    if (switches.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No switches configured. Create switches to aggregate multiple monitors.</p>';
+        return;
+    }
+
+    container.innerHTML = switches.map(sw => {
+        let logicText = '';
+        if (sw.logic === 'any') {
+            logicText = 'ANY (OR)';
+        } else if (sw.logic === 'all') {
+            logicText = 'ALL (AND)';
+        } else if (sw.logic && sw.logic.min_of) {
+            logicText = `MIN ${sw.logic.min_of.count}`;
+        }
+
+        return `
+            <div class="list-item">
+                <div class="list-item-info">
+                    <strong>${escapeHtml(sw.name)}</strong> (${escapeHtml(sw.id)})<br>
+                    Logic: ${logicText}, Sources: ${sw.sources.length}, Hold: ${sw.hold_time_seconds}s
+                    ${!sw.enabled ? '<span style="color: #999;"> [Disabled]</span>' : ''}
+                </div>
+                <div class="list-item-actions">
+                    <button class="btn btn-primary" onclick="editSwitch('${escapeHtml(sw.id)}')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteSwitch('${escapeHtml(sw.id)}')">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleSwitchLogicOptions() {
+    const logic = document.getElementById('switch-logic').value;
+    document.getElementById('switch-min-count-group').style.display = logic === 'min_of' ? 'block' : 'none';
+}
+
+function populateSwitchSources() {
+    const container = document.getElementById('switch-sources-container');
+    const mqttMonitors = Object.values(config.mqtt_monitors || {});
+    const alpacaMonitors = Object.values(config.alpaca_monitors || {});
+
+    if (mqttMonitors.length === 0 && alpacaMonitors.length === 0) {
+        container.innerHTML = '<p style="color: #999;">No monitors available. Create MQTT or Alpaca monitors first.</p>';
+        return;
+    }
+
+    let html = '';
+
+    if (mqttMonitors.length > 0) {
+        html += '<div style="margin-bottom: 10px;"><strong>MQTT Monitors:</strong></div>';
+        html += mqttMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="switch-source-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    if (alpacaMonitors.length > 0) {
+        html += '<div style="margin: 10px 0;"><strong>Alpaca Monitors:</strong></div>';
+        html += alpacaMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="switch-source-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    container.innerHTML = html;
+}
+
+function showAddSwitch() {
+    currentEditId = null;
+    currentEditType = 'switch';
+    document.getElementById('switch-form').style.display = 'block';
+    document.getElementById('switch-form-title').textContent = 'Add Switch';
+    document.getElementById('switch-id').value = '';
+    document.getElementById('switch-id').disabled = false;
+    document.getElementById('switch-name').value = '';
+    document.getElementById('switch-description').value = '';
+    document.getElementById('switch-logic').value = 'any';
+    document.getElementById('switch-min-count').value = '2';
+    document.getElementById('switch-min-count-group').style.display = 'none';
+    document.getElementById('switch-timeout').value = '300';
+    document.getElementById('switch-hold-time').value = '0';
+    document.getElementById('switch-enabled').checked = true;
+
+    // Add event listener for logic dropdown
+    document.getElementById('switch-logic').onchange = toggleSwitchLogicOptions;
+
+    populateSwitchSources();
+}
+
+function editSwitch(id) {
+    const sw = config.switches[id];
+    if (!sw) return;
+
+    currentEditId = id;
+    currentEditType = 'switch';
+    document.getElementById('switch-form').style.display = 'block';
+    document.getElementById('switch-form-title').textContent = 'Edit Switch';
+    document.getElementById('switch-id').value = sw.id;
+    document.getElementById('switch-id').disabled = true;
+    document.getElementById('switch-name').value = sw.name;
+    document.getElementById('switch-description').value = sw.description || '';
+    document.getElementById('switch-timeout').value = sw.timeout_seconds || 300;
+    document.getElementById('switch-hold-time').value = sw.hold_time_seconds || 0;
+    document.getElementById('switch-enabled').checked = sw.enabled !== false;
+
+    // Set logic
+    if (sw.logic === 'any' || sw.logic === 'all') {
+        document.getElementById('switch-logic').value = sw.logic;
+        document.getElementById('switch-min-count-group').style.display = 'none';
+    } else if (sw.logic && sw.logic.min_of) {
+        document.getElementById('switch-logic').value = 'min_of';
+        document.getElementById('switch-min-count').value = sw.logic.min_of.count;
+        document.getElementById('switch-min-count-group').style.display = 'block';
+    }
+
+    // Add event listener for logic dropdown
+    document.getElementById('switch-logic').onchange = toggleSwitchLogicOptions;
+
+    populateSwitchSources();
+
+    // Check the selected sources
+    setTimeout(() => {
+        const checkboxes = document.querySelectorAll('.switch-source-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = sw.sources.includes(cb.value);
+        });
+    }, 0);
+}
+
+function cancelSwitch() {
+    document.getElementById('switch-form').style.display = 'none';
+    currentEditId = null;
+    currentEditType = null;
+}
+
+function saveSwitch() {
+    const id = document.getElementById('switch-id').value.trim();
+    const name = document.getElementById('switch-name').value.trim();
+    const description = document.getElementById('switch-description').value.trim();
+    const logicType = document.getElementById('switch-logic').value;
+    const minCount = parseInt(document.getElementById('switch-min-count').value);
+    const timeout_seconds = parseInt(document.getElementById('switch-timeout').value);
+    const hold_time_seconds = parseInt(document.getElementById('switch-hold-time').value);
+    const enabled = document.getElementById('switch-enabled').checked;
+
+    // Get selected sources
+    const checkboxes = document.querySelectorAll('.switch-source-checkbox:checked');
+    const sources = Array.from(checkboxes).map(cb => cb.value);
+
+    if (!id || !name) {
+        showNotification('Please fill in ID and Name', 'error');
+        return;
+    }
+
+    if (sources.length === 0) {
+        showNotification('Please select at least one source monitor', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.switches[id]) {
+        showNotification('Switch ID already exists', 'error');
+        return;
+    }
+
+    // Build logic object
+    let logic;
+    if (logicType === 'any' || logicType === 'all') {
+        logic = logicType;
+    } else if (logicType === 'min_of') {
+        if (minCount < 1 || minCount > sources.length) {
+            showNotification(`Minimum count must be between 1 and ${sources.length}`, 'error');
+            return;
+        }
+        logic = { min_of: { count: minCount } };
+    }
+
+    config.switches = config.switches || {};
+    config.switches[id] = {
+        id,
+        name,
+        description: description || null,
+        sources,
+        logic,
+        timeout_seconds,
+        hold_time_seconds,
+        enabled
+    };
+
+    saveConfig().then(success => {
+        if (success) {
+            cancelSwitch();
+            renderSwitches();
+            showNotification('Switch saved. Click Reload to apply changes.', 'success');
+        }
+    });
+}
+
+function deleteSwitch(id) {
+    if (!confirm(`Delete switch '${id}'?`)) return;
+
+    delete config.switches[id];
+    saveConfig().then(success => {
+        if (success) {
+            renderSwitches();
+            showNotification('Switch deleted. Click Reload to apply changes.', 'success');
+        }
+    });
 }

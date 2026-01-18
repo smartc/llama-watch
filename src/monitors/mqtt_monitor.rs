@@ -31,6 +31,7 @@ impl MqttMonitor {
             hold_time_seconds: config.hold_time_seconds,
             pending_is_safe: None,
             pending_since: None,
+            include_in_safety: config.include_in_safety,
         }));
 
         Self {
@@ -42,14 +43,16 @@ impl MqttMonitor {
 
     pub fn get_status(&self) -> MonitorStatus {
         let mut status = self.status.read().clone();
+        let now = chrono::Utc::now();
 
-        // Update enabled state from config
+        // Update config-driven fields
         status.enabled = self.config.enabled;
         status.hold_time_seconds = self.config.hold_time_seconds;
+        status.include_in_safety = self.config.include_in_safety;
 
-        // Check for pending state transitions and commit if hold time elapsed
+        // Check for pending safety state transitions and commit if hold time elapsed
         if let (Some(pending_safe), Some(pending_since)) = (status.pending_is_safe, status.pending_since) {
-            let elapsed = chrono::Utc::now().signed_duration_since(pending_since);
+            let elapsed = now.signed_duration_since(pending_since);
             if elapsed.num_seconds() as u64 >= self.config.hold_time_seconds {
                 // Hold time has elapsed, commit the pending state
                 let mut s = self.status.write();
@@ -62,10 +65,10 @@ impl MqttMonitor {
             }
         }
 
-        // Check for timeout (if enabled - 0 means disabled)
+        // Check for safety timeout (if enabled - 0 means disabled)
         if self.config.timeout_seconds > 0 {
             if let Some(last_update) = status.last_update {
-                let elapsed = chrono::Utc::now().signed_duration_since(last_update);
+                let elapsed = now.signed_duration_since(last_update);
                 if elapsed.num_seconds() as u64 > self.config.timeout_seconds {
                     status.is_safe = false;
                     status.error = Some(format!(
@@ -167,7 +170,7 @@ impl MqttMonitor {
                                 s.error = None;
                                 s.raw_payload = Some(payload.clone());
 
-                                // Handle hold time logic
+                                // Safety state logic with hold time
                                 if config.hold_time_seconds == 0 || is_initial_reading {
                                     // Immediate change (no hold time OR first reading)
                                     s.is_safe = calculated_is_safe;

@@ -35,6 +35,7 @@
                 <button class="tab" onclick="switchTab('mqtt-servers')">MQTT Servers</button>
                 <button class="tab" onclick="switchTab('mqtt-monitors')">MQTT Monitors</button>
                 <button class="tab" onclick="switchTab('alpaca-monitors')">Alpaca Monitors</button>
+                <button class="tab" onclick="switchTab('switches')">Switches</button>
                 <button class="tab" onclick="switchTab('weather-devices')">Weather Devices</button>
                 <button class="tab" onclick="switchTab('settings')">Settings</button>
             </div>
@@ -52,6 +53,13 @@
                 <div class="section">
                     <h2>Monitor Status</h2>
                     <div id="monitor-status-list"></div>
+                </div>
+                <div class="section" id="switches-status-section" style="display: none;">
+                    <h2>Switch Status</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                        Aggregated switches combine multiple monitors using configurable logic (ANY, ALL, or N-out-of-M).
+                    </p>
+                    <div id="switches-status-list"></div>
                 </div>
                 <div class="section">
                     <h2>Weather Device Status</h2>
@@ -166,6 +174,16 @@
                         <input type="number" id="mqtt-monitor-hold-time" value="0" min="0">
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
+
+                    <h3>Safety Integration</h3>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="mqtt-monitor-include-in-safety" checked>
+                            <span>Include in Safety Monitor</span>
+                        </label>
+                        <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
+                    </div>
+
                     <button class="btn btn-success" onclick="saveMqttMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelMqttMonitor()">Cancel</button>
                 </div>
@@ -250,8 +268,93 @@
                         <input type="number" id="alpaca-monitor-hold-time" value="0" min="0">
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
+
+                    <h3>Safety Integration</h3>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="alpaca-monitor-include-in-safety" checked>
+                            <span>Include in Safety Monitor</span>
+                        </label>
+                        <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
+                    </div>
+
                     <button class="btn btn-success" onclick="saveAlpacaMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelAlpacaMonitor()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Switches Tab -->
+            <div id="tab-switches" class="tab-content">
+                <div class="section">
+                    <h2>Aggregated Switches</h2>
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Define switches that aggregate multiple monitors with configurable logic.
+                        Use ANY (OR), ALL (AND), or N-out-of-M logic to combine monitor states.
+                    </p>
+                    <button class="btn btn-primary" onclick="showAddSwitch()">Add Switch</button>
+                    <div id="switches-list" class="list-container"></div>
+                </div>
+
+                <div id="switch-form" class="section" style="display: none;">
+                    <h2 id="switch-form-title">Add Switch</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Switch ID *</label>
+                            <input type="text" id="switch-id" placeholder="e.g., is-cloudy">
+                            <div class="info-text">Unique identifier for this switch</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Switch Name *</label>
+                            <input type="text" id="switch-name" placeholder="e.g., Is Cloudy">
+                            <div class="info-text">Display name shown in ASCOM clients</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="switch-description" placeholder="e.g., Cloud detection from multiple sensors">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Logic *</label>
+                            <select id="switch-logic">
+                                <option value="any">ANY - Triggered if ANY source is triggered (OR)</option>
+                                <option value="all">ALL - Triggered only if ALL sources are triggered (AND)</option>
+                                <option value="min_of">MIN OF - Triggered if at least N sources are triggered</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="switch-min-count-group" style="display: none;">
+                            <label>Minimum Count *</label>
+                            <input type="number" id="switch-min-count" value="2" min="1">
+                            <div class="info-text">Number of sources that must be triggered</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Source Monitors *</label>
+                        <div id="switch-sources-container" class="sources-container">
+                            <!-- Checkboxes will be populated dynamically -->
+                        </div>
+                        <div class="info-text">Select monitors to aggregate into this switch</div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Timeout (seconds) *</label>
+                            <input type="number" id="switch-timeout" value="300" min="1">
+                            <div class="info-text">Sources without data within this time are considered triggered</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Hold Time (seconds)</label>
+                            <input type="number" id="switch-hold-time" value="0" min="0">
+                            <div class="info-text">Time a state must persist before the switch changes (prevents flapping)</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="switch-enabled" checked>
+                            Enabled
+                        </label>
+                    </div>
+                    <button class="btn btn-success" onclick="saveSwitch()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelSwitch()">Cancel</button>
                 </div>
             </div>
 
@@ -548,6 +651,37 @@
                         <div class="info-text">Port requires application restart to take effect</div>
                     </div>
                     <button class="btn btn-success" onclick="saveSettings()">Save Settings</button>
+                </div>
+
+                <div class="section">
+                    <h2>ASCOM Switch Device</h2>
+                    <div class="info-text" style="margin-bottom: 15px;">
+                        The Switch device exposes monitors with "Expose as ASCOM Switch" enabled as read-only boolean switches.
+                        This allows automation software like NINA to read individual monitor states independently of the overall safety status.
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="switch-device-enabled" checked>
+                            <span>Enable Switch Device</span>
+                        </label>
+                        <div class="info-text">When enabled, the ASCOM Switch device is available for discovery</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Switch Device Name</label>
+                        <input type="text" id="switch-device-name" placeholder="LLAMA Switch Device">
+                    </div>
+                    <div class="form-group">
+                        <label>Switch Device Description</label>
+                        <input type="text" id="switch-device-description" placeholder="Exposes monitor conditions as read-only switches">
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="switch-device-auto-connect" checked>
+                            <span>Auto-Connect on Startup</span>
+                        </label>
+                        <div class="info-text">If checked, device will start in connected state</div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveSwitchDeviceSettings()">Save Switch Settings</button>
                 </div>
 
                 <div class="section">
