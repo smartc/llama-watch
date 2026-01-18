@@ -152,9 +152,90 @@ async function refreshStatus() {
 
         // Update switch status list
         renderSwitchStatus(status.switches || []);
+
+        // Fetch and render weather status
+        try {
+            const weatherResponse = await fetch('/api/weather/status');
+            const weatherStatus = await weatherResponse.json();
+            renderWeatherStatus(weatherStatus);
+        } catch (err) {
+            console.error('Failed to fetch weather status:', err);
+        }
     } catch (error) {
         console.error('Failed to refresh status:', error);
     }
+}
+
+// Render weather status
+function renderWeatherStatus(weatherDevices) {
+    const container = document.getElementById('weather-status-list');
+
+    if (!weatherDevices || weatherDevices.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No weather devices configured</p>';
+        return;
+    }
+
+    container.innerHTML = weatherDevices.map(device => {
+        const statusClass = device.enabled ? (device.is_safe ? 'safe' : 'unsafe') : 'disabled';
+        const statusText = device.enabled ? (device.is_safe ? 'SAFE' : 'UNSAFE') : 'DISABLED';
+        const lastUpdate = device.last_update
+            ? new Date(device.last_update).toLocaleString()
+            : 'Never';
+
+        // Build measurements table
+        const measurements = Object.entries(device.measurements || {}).map(([key, m]) => {
+            let measurementClass = '';
+            let statusIndicator = '';
+
+            if (m.is_monitored) {
+                measurementClass = m.is_safe ? 'measurement-safe' : 'measurement-unsafe';
+                statusIndicator = m.is_safe
+                    ? '<span style="color: #27ae60; font-weight: bold;">✓</span>'
+                    : '<span style="color: #e74c3c; font-weight: bold;">✗</span>';
+            } else {
+                measurementClass = 'measurement-unmonitored';
+                statusIndicator = '<span style="color: #95a5a6;">—</span>';
+            }
+
+            const thresholdDisplay = m.is_monitored ? m.threshold.toFixed(2) : '—';
+
+            return `
+                <tr class="${measurementClass}">
+                    <td>${m.name}</td>
+                    <td style="text-align: right;">${m.value.toFixed(2)}</td>
+                    <td style="text-align: right;">${thresholdDisplay}</td>
+                    <td style="text-align: center;">${statusIndicator}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="status-card ${statusClass}">
+                <div class="status-header">
+                    <span class="status-name">${device.name}</span>
+                    <span class="status-badge ${statusClass}">${statusText}</span>
+                </div>
+                <div class="status-details">
+                    <div><strong>Device:</strong> Weather Device ${device.device_number}</div>
+                    <div><strong>Last Update:</strong> ${lastUpdate}</div>
+                    ${device.error ? `<div style="color: #e74c3c;"><strong>Error:</strong> ${device.error}</div>` : ''}
+                </div>
+                <table class="measurements-table" style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ddd;">
+                            <th style="text-align: left; padding: 5px;">Measurement</th>
+                            <th style="text-align: right; padding: 5px;">Value</th>
+                            <th style="text-align: right; padding: 5px;">Threshold</th>
+                            <th style="text-align: center; padding: 5px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${measurements}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }).join('');
 }
 
 // Render all
@@ -165,18 +246,6 @@ function renderAll() {
     renderSwitches();
     renderSettings();
     renderSwitchDeviceSettings();
-}
-
-// Toggle MQTT switch fields visibility
-function toggleMqttSwitchFields() {
-    const enabled = document.getElementById('mqtt-monitor-include-in-switch').checked;
-    document.getElementById('mqtt-switch-fields').style.display = enabled ? 'block' : 'none';
-}
-
-// Toggle Alpaca switch fields visibility
-function toggleAlpacaSwitchFields() {
-    const enabled = document.getElementById('alpaca-monitor-include-in-switch').checked;
-    document.getElementById('alpaca-switch-fields').style.display = enabled ? 'block' : 'none';
 }
 
 // Render monitor status
@@ -484,15 +553,8 @@ function editMqttMonitor(id) {
     document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('mqtt-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('mqtt-monitor-hold-time').value = monitor.hold_time_seconds || 0;
-    // Switch integration fields
     const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
-    const includeInSwitch = monitor.include_in_switch || false;
     document.getElementById('mqtt-monitor-include-in-safety').checked = includeInSafety;
-    document.getElementById('mqtt-monitor-include-in-switch').checked = includeInSwitch;
-    document.getElementById('mqtt-monitor-switch-name').value = monitor.switch_name || '';
-    document.getElementById('mqtt-monitor-switch-timeout').value = monitor.switch_timeout_seconds || '';
-    document.getElementById('mqtt-monitor-switch-hold-time').value = monitor.switch_hold_time_seconds || '';
-    document.getElementById('mqtt-switch-fields').style.display = includeInSwitch ? 'block' : 'none';
 }
 
 function cancelMqttMonitor() {
@@ -512,12 +574,7 @@ function saveMqttMonitor() {
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('mqtt-monitor-hold-time').value);
-    // Switch integration fields
     const include_in_safety = document.getElementById('mqtt-monitor-include-in-safety').checked;
-    const include_in_switch = document.getElementById('mqtt-monitor-include-in-switch').checked;
-    const switch_name = document.getElementById('mqtt-monitor-switch-name').value.trim();
-    const switch_timeout_raw = document.getElementById('mqtt-monitor-switch-timeout').value.trim();
-    const switch_hold_time_raw = document.getElementById('mqtt-monitor-switch-hold-time').value.trim();
 
     if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -540,18 +597,14 @@ function saveMqttMonitor() {
         name,
         server_id,
         topic,
-        json_path: json_path_raw || null, // null for raw values, string for JSON path
+        json_path: json_path_raw || null,
         threshold,
         operator,
         safe_when_true,
         timeout_seconds,
         hold_time_seconds,
         enabled: existingEnabled,
-        include_in_safety,
-        include_in_switch,
-        switch_name: include_in_switch && switch_name ? switch_name : null,
-        switch_timeout_seconds: include_in_switch && switch_timeout_raw ? parseInt(switch_timeout_raw) : null,
-        switch_hold_time_seconds: include_in_switch && switch_hold_time_raw ? parseInt(switch_hold_time_raw) : null
+        include_in_safety
     };
 
     saveConfig().then(success => {
@@ -615,13 +668,7 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
     document.getElementById('alpaca-monitor-timeout').value = '300';
     document.getElementById('alpaca-monitor-hold-time').value = '0';
-    // Switch integration fields
     document.getElementById('alpaca-monitor-include-in-safety').checked = true;
-    document.getElementById('alpaca-monitor-include-in-switch').checked = false;
-    document.getElementById('alpaca-monitor-switch-name').value = '';
-    document.getElementById('alpaca-monitor-switch-timeout').value = '';
-    document.getElementById('alpaca-monitor-switch-hold-time').value = '';
-    document.getElementById('alpaca-switch-fields').style.display = 'none';
 }
 
 function editAlpacaMonitor(id) {
@@ -644,15 +691,8 @@ function editAlpacaMonitor(id) {
     document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('alpaca-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('alpaca-monitor-hold-time').value = monitor.hold_time_seconds || 0;
-    // Switch integration fields
     const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
-    const includeInSwitch = monitor.include_in_switch || false;
     document.getElementById('alpaca-monitor-include-in-safety').checked = includeInSafety;
-    document.getElementById('alpaca-monitor-include-in-switch').checked = includeInSwitch;
-    document.getElementById('alpaca-monitor-switch-name').value = monitor.switch_name || '';
-    document.getElementById('alpaca-monitor-switch-timeout').value = monitor.switch_timeout_seconds || '';
-    document.getElementById('alpaca-monitor-switch-hold-time').value = monitor.switch_hold_time_seconds || '';
-    document.getElementById('alpaca-switch-fields').style.display = includeInSwitch ? 'block' : 'none';
 }
 
 function cancelAlpacaMonitor() {
@@ -674,12 +714,7 @@ function saveAlpacaMonitor() {
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('alpaca-monitor-hold-time').value);
-    // Switch integration fields
     const include_in_safety = document.getElementById('alpaca-monitor-include-in-safety').checked;
-    const include_in_switch = document.getElementById('alpaca-monitor-include-in-switch').checked;
-    const switch_name = document.getElementById('alpaca-monitor-switch-name').value.trim();
-    const switch_timeout_raw = document.getElementById('alpaca-monitor-switch-timeout').value.trim();
-    const switch_hold_time_raw = document.getElementById('alpaca-monitor-switch-hold-time').value.trim();
 
     if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -711,11 +746,7 @@ function saveAlpacaMonitor() {
         timeout_seconds,
         hold_time_seconds,
         enabled: existingEnabled,
-        include_in_safety,
-        include_in_switch,
-        switch_name: include_in_switch && switch_name ? switch_name : null,
-        switch_timeout_seconds: include_in_switch && switch_timeout_raw ? parseInt(switch_timeout_raw) : null,
-        switch_hold_time_seconds: include_in_switch && switch_hold_time_raw ? parseInt(switch_hold_time_raw) : null
+        include_in_safety
     };
 
     saveConfig().then(success => {

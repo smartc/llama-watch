@@ -175,41 +175,13 @@
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
 
-                    <h3>Safety & Switch Integration</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="checkbox-group">
-                                <input type="checkbox" id="mqtt-monitor-include-in-safety" checked>
-                                <span>Include in Safety Monitor</span>
-                            </label>
-                            <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-group">
-                                <input type="checkbox" id="mqtt-monitor-include-in-switch" onchange="toggleMqttSwitchFields()">
-                                <span>Expose as ASCOM Switch</span>
-                            </label>
-                            <div class="info-text">When checked, this monitor is exposed as a read-only ASCOM Switch</div>
-                        </div>
-                    </div>
-                    <div id="mqtt-switch-fields" style="display: none;">
-                        <div class="form-group">
-                            <label>Switch Name</label>
-                            <input type="text" id="mqtt-monitor-switch-name" placeholder="e.g., isCloudy">
-                            <div class="info-text">Display name for the ASCOM Switch (defaults to monitor name if blank)</div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Switch Timeout (seconds)</label>
-                                <input type="number" id="mqtt-monitor-switch-timeout" value="" min="0" placeholder="Same as above">
-                                <div class="info-text">Switch-specific timeout (leave blank to use safety timeout)</div>
-                            </div>
-                            <div class="form-group">
-                                <label>Switch Hold Time (seconds)</label>
-                                <input type="number" id="mqtt-monitor-switch-hold-time" value="" min="0" placeholder="Same as above">
-                                <div class="info-text">Switch-specific hold time (leave blank to use safety hold time)</div>
-                            </div>
-                        </div>
+                    <h3>Safety Integration</h3>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="mqtt-monitor-include-in-safety" checked>
+                            <span>Include in Safety Monitor</span>
+                        </label>
+                        <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
                     </div>
 
                     <button class="btn btn-success" onclick="saveMqttMonitor()">Save</button>
@@ -297,41 +269,13 @@
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
 
-                    <h3>Safety & Switch Integration</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="checkbox-group">
-                                <input type="checkbox" id="alpaca-monitor-include-in-safety" checked>
-                                <span>Include in Safety Monitor</span>
-                            </label>
-                            <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-group">
-                                <input type="checkbox" id="alpaca-monitor-include-in-switch" onchange="toggleAlpacaSwitchFields()">
-                                <span>Expose as ASCOM Switch</span>
-                            </label>
-                            <div class="info-text">When checked, this monitor is exposed as a read-only ASCOM Switch</div>
-                        </div>
-                    </div>
-                    <div id="alpaca-switch-fields" style="display: none;">
-                        <div class="form-group">
-                            <label>Switch Name</label>
-                            <input type="text" id="alpaca-monitor-switch-name" placeholder="e.g., isRoofOpen">
-                            <div class="info-text">Display name for the ASCOM Switch (defaults to monitor name if blank)</div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Switch Timeout (seconds)</label>
-                                <input type="number" id="alpaca-monitor-switch-timeout" value="" min="0" placeholder="Same as above">
-                                <div class="info-text">Switch-specific timeout (leave blank to use safety timeout)</div>
-                            </div>
-                            <div class="form-group">
-                                <label>Switch Hold Time (seconds)</label>
-                                <input type="number" id="alpaca-monitor-switch-hold-time" value="" min="0" placeholder="Same as above">
-                                <div class="info-text">Switch-specific hold time (leave blank to use safety hold time)</div>
-                            </div>
-                        </div>
+                    <h3>Safety Integration</h3>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="alpaca-monitor-include-in-safety" checked>
+                            <span>Include in Safety Monitor</span>
+                        </label>
+                        <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
                     </div>
 
                     <button class="btn btn-success" onclick="saveAlpacaMonitor()">Save</button>

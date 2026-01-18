@@ -47,17 +47,8 @@ pub struct MqttMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
-    // Safety vs Switch inclusion
     #[serde(default = "default_include_in_safety")]
     pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
-    #[serde(default)]
-    pub include_in_switch: bool, // Expose this monitor as an ASCOM Switch (default false)
-    #[serde(default)]
-    pub switch_name: Option<String>, // Display name for the switch (defaults to monitor name)
-    #[serde(default)]
-    pub switch_timeout_seconds: Option<u64>, // Switch-specific timeout (defaults to timeout_seconds)
-    #[serde(default)]
-    pub switch_hold_time_seconds: Option<u64>, // Switch-specific hold time (defaults to hold_time_seconds)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,17 +69,8 @@ pub struct AlpacaMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
-    // Safety vs Switch inclusion
     #[serde(default = "default_include_in_safety")]
     pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
-    #[serde(default)]
-    pub include_in_switch: bool, // Expose this monitor as an ASCOM Switch (default false)
-    #[serde(default)]
-    pub switch_name: Option<String>, // Display name for the switch (defaults to monitor name)
-    #[serde(default)]
-    pub switch_timeout_seconds: Option<u64>, // Switch-specific timeout (defaults to timeout_seconds)
-    #[serde(default)]
-    pub switch_hold_time_seconds: Option<u64>, // Switch-specific hold time (defaults to hold_time_seconds)
 }
 
 fn default_timeout() -> u64 {
@@ -254,17 +236,7 @@ pub struct MonitorStatus {
     pub hold_time_seconds: u64,
     pub pending_is_safe: Option<bool>,
     pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
-    // Safety/Switch inclusion flags
     pub include_in_safety: bool,
-    pub include_in_switch: bool,
-    pub switch_name: Option<String>,
-    // Switch-specific state (independent of safety state)
-    pub switch_is_safe: bool,
-    pub switch_timeout_seconds: u64,
-    pub switch_hold_time_seconds: u64,
-    pub switch_pending_is_safe: Option<bool>,
-    pub switch_pending_since: Option<chrono::DateTime<chrono::Utc>>,
-    pub switch_error: Option<String>,
 }
 
 // Weather device configuration

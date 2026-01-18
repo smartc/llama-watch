@@ -17,10 +17,6 @@ pub struct MqttMonitor {
 
 impl MqttMonitor {
     pub fn new(config: MqttMonitorConfig, server_config: MqttServerConfig) -> Self {
-        // Calculate effective switch timing (fallback to safety timing if not specified)
-        let switch_timeout = config.switch_timeout_seconds.unwrap_or(config.timeout_seconds);
-        let switch_hold_time = config.switch_hold_time_seconds.unwrap_or(config.hold_time_seconds);
-
         let status = Arc::new(RwLock::new(MonitorStatus {
             id: config.id.clone(),
             name: config.name.clone(),
@@ -35,16 +31,7 @@ impl MqttMonitor {
             hold_time_seconds: config.hold_time_seconds,
             pending_is_safe: None,
             pending_since: None,
-            // New switch-related fields
             include_in_safety: config.include_in_safety,
-            include_in_switch: config.include_in_switch,
-            switch_name: config.switch_name.clone(),
-            switch_is_safe: false,
-            switch_timeout_seconds: switch_timeout,
-            switch_hold_time_seconds: switch_hold_time,
-            switch_pending_is_safe: None,
-            switch_pending_since: None,
-            switch_error: None,
         }));
 
         Self {
@@ -58,20 +45,11 @@ impl MqttMonitor {
         let mut status = self.status.read().clone();
         let now = chrono::Utc::now();
 
-        // Calculate effective switch timing
-        let switch_timeout = self.config.switch_timeout_seconds.unwrap_or(self.config.timeout_seconds);
-        let switch_hold_time = self.config.switch_hold_time_seconds.unwrap_or(self.config.hold_time_seconds);
-
         // Update config-driven fields
         status.enabled = self.config.enabled;
         status.hold_time_seconds = self.config.hold_time_seconds;
         status.include_in_safety = self.config.include_in_safety;
-        status.include_in_switch = self.config.include_in_switch;
-        status.switch_name = self.config.switch_name.clone();
-        status.switch_timeout_seconds = switch_timeout;
-        status.switch_hold_time_seconds = switch_hold_time;
 
-        // === SAFETY STATE PROCESSING ===
         // Check for pending safety state transitions and commit if hold time elapsed
         if let (Some(pending_safe), Some(pending_since)) = (status.pending_is_safe, status.pending_since) {
             let elapsed = now.signed_duration_since(pending_since);
@@ -103,41 +81,6 @@ impl MqttMonitor {
                 // No data ever received
                 status.is_safe = false;
                 status.error = Some("No data received yet".to_string());
-            }
-        }
-
-        // === SWITCH STATE PROCESSING ===
-        // Check for pending switch state transitions and commit if switch hold time elapsed
-        if let (Some(pending_safe), Some(pending_since)) = (status.switch_pending_is_safe, status.switch_pending_since) {
-            let elapsed = now.signed_duration_since(pending_since);
-            if elapsed.num_seconds() as u64 >= switch_hold_time {
-                // Switch hold time has elapsed, commit the pending state
-                let mut s = self.status.write();
-                s.switch_is_safe = pending_safe;
-                s.switch_pending_is_safe = None;
-                s.switch_pending_since = None;
-                status.switch_is_safe = pending_safe;
-                status.switch_pending_is_safe = None;
-                status.switch_pending_since = None;
-            }
-        }
-
-        // Check for switch timeout (if enabled - 0 means disabled)
-        if switch_timeout > 0 {
-            if let Some(last_update) = status.last_update {
-                let elapsed = now.signed_duration_since(last_update);
-                if elapsed.num_seconds() as u64 > switch_timeout {
-                    status.switch_is_safe = false;
-                    status.switch_error = Some(format!(
-                        "Timeout: No data received for {} seconds (timeout: {}s)",
-                        elapsed.num_seconds(),
-                        switch_timeout
-                    ));
-                }
-            } else {
-                // No data ever received
-                status.switch_is_safe = false;
-                status.switch_error = Some("No data received yet".to_string());
             }
         }
 
@@ -222,16 +165,12 @@ impl MqttMonitor {
                                 let mut s = status.write();
                                 let is_initial_reading = s.last_update.is_none();
 
-                                // Calculate effective switch timing
-                                let switch_hold_time = config.switch_hold_time_seconds.unwrap_or(config.hold_time_seconds);
-
                                 s.current_value = Some(value);
                                 s.last_update = Some(now);
                                 s.error = None;
-                                s.switch_error = None;
                                 s.raw_payload = Some(payload.clone());
 
-                                // === SAFETY STATE LOGIC ===
+                                // Safety state logic with hold time
                                 if config.hold_time_seconds == 0 || is_initial_reading {
                                     // Immediate change (no hold time OR first reading)
                                     s.is_safe = calculated_is_safe;
@@ -255,7 +194,7 @@ impl MqttMonitor {
                                                     s.pending_is_safe = None;
                                                     s.pending_since = None;
                                                     info!(
-                                                        "MQTT monitor '{}': safety state change committed after hold time - safe={}",
+                                                        "MQTT monitor '{}': state change committed after hold time - safe={}",
                                                         config.name, calculated_is_safe
                                                     );
                                                 }
@@ -265,57 +204,16 @@ impl MqttMonitor {
                                             s.pending_is_safe = Some(calculated_is_safe);
                                             s.pending_since = Some(now);
                                             info!(
-                                                "MQTT monitor '{}': pending safety state change {} -> {} (hold time: {}s)",
+                                                "MQTT monitor '{}': pending state change {} -> {} (hold time: {}s)",
                                                 config.name, s.is_safe, calculated_is_safe, config.hold_time_seconds
                                             );
                                         }
                                     }
                                 }
 
-                                // === SWITCH STATE LOGIC (independent timing) ===
-                                if switch_hold_time == 0 || is_initial_reading {
-                                    // Immediate change (no hold time OR first reading)
-                                    s.switch_is_safe = calculated_is_safe;
-                                    s.switch_pending_is_safe = None;
-                                    s.switch_pending_since = None;
-                                } else {
-                                    // Switch hold time is configured and this is not the first reading
-                                    if calculated_is_safe == s.switch_is_safe {
-                                        // Calculated state matches current switch state - clear any pending
-                                        s.switch_pending_is_safe = None;
-                                        s.switch_pending_since = None;
-                                    } else {
-                                        // Calculated state differs from current switch state
-                                        if s.switch_pending_is_safe == Some(calculated_is_safe) {
-                                            // Already pending this transition - check if switch hold time elapsed
-                                            if let Some(pending_since) = s.switch_pending_since {
-                                                let elapsed = now.signed_duration_since(pending_since);
-                                                if elapsed.num_seconds() as u64 >= switch_hold_time {
-                                                    // Switch hold time elapsed - commit the change
-                                                    s.switch_is_safe = calculated_is_safe;
-                                                    s.switch_pending_is_safe = None;
-                                                    s.switch_pending_since = None;
-                                                    info!(
-                                                        "MQTT monitor '{}': switch state change committed after hold time - safe={}",
-                                                        config.name, calculated_is_safe
-                                                    );
-                                                }
-                                            }
-                                        } else {
-                                            // New pending switch transition - reset timer
-                                            s.switch_pending_is_safe = Some(calculated_is_safe);
-                                            s.switch_pending_since = Some(now);
-                                            info!(
-                                                "MQTT monitor '{}': pending switch state change {} -> {} (hold time: {}s)",
-                                                config.name, s.switch_is_safe, calculated_is_safe, switch_hold_time
-                                            );
-                                        }
-                                    }
-                                }
-
                                 info!(
-                                    "MQTT monitor '{}': value={}, safety_safe={}, switch_safe={}, safety_pending={:?}, switch_pending={:?}",
-                                    config.name, value, s.is_safe, s.switch_is_safe, s.pending_is_safe, s.switch_pending_is_safe
+                                    "MQTT monitor '{}': value={}, safe={}, pending={:?}",
+                                    config.name, value, s.is_safe, s.pending_is_safe
                                 );
                             }
                             Err(e) => {
@@ -325,9 +223,7 @@ impl MqttMonitor {
                                 );
                                 let mut s = status.write();
                                 s.error = Some(e.to_string());
-                                s.switch_error = Some(e.to_string());
                                 s.is_safe = false;
-                                s.switch_is_safe = false;
                                 s.last_update = Some(chrono::Utc::now());
                                 s.raw_payload = Some(payload.clone());
                             }
@@ -467,13 +363,9 @@ impl MqttMonitorManager {
             status.is_safe = old_status.is_safe;
             status.current_value = old_status.current_value;
             status.last_update = old_status.last_update;
-            // Preserve switch state
-            status.switch_is_safe = old_status.switch_is_safe;
             // Clear any pending states to avoid confusion after config change
             status.pending_is_safe = None;
             status.pending_since = None;
-            status.switch_pending_is_safe = None;
-            status.switch_pending_since = None;
             Some(())
         } else {
             None

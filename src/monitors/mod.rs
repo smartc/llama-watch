@@ -225,27 +225,6 @@ impl MonitorState {
         }
     }
 
-    /// Get all monitors that are configured to be switches
-    pub fn get_switch_statuses(&self) -> Vec<MonitorStatus> {
-        self.get_all_statuses()
-            .into_iter()
-            .filter(|s| s.include_in_switch)
-            .collect()
-    }
-
-    /// Get the number of configured switches
-    pub fn get_switch_count(&self) -> usize {
-        self.get_all_statuses()
-            .into_iter()
-            .filter(|s| s.include_in_switch)
-            .count()
-    }
-
-    /// Get switch status by index (0-based)
-    pub fn get_switch_by_index(&self, index: usize) -> Option<MonitorStatus> {
-        self.get_switch_statuses().into_iter().nth(index)
-    }
-
     pub fn get_all_statuses(&self) -> Vec<MonitorStatus> {
         let mut statuses = Vec::new();
         statuses.extend(self.mqtt_manager.get_statuses());

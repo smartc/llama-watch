@@ -98,8 +98,6 @@ pub async fn get_status(
     // Add disabled MQTT monitors
     for (id, mqtt_config) in &config.mqtt_monitors {
         if !mqtt_config.enabled && !active_ids.contains(id) {
-            let switch_timeout = mqtt_config.switch_timeout_seconds.unwrap_or(mqtt_config.timeout_seconds);
-            let switch_hold_time = mqtt_config.switch_hold_time_seconds.unwrap_or(mqtt_config.hold_time_seconds);
             statuses.push(crate::config::models::MonitorStatus {
                 id: id.clone(),
                 name: mqtt_config.name.clone(),
@@ -115,14 +113,6 @@ pub async fn get_status(
                 pending_is_safe: None,
                 pending_since: None,
                 include_in_safety: mqtt_config.include_in_safety,
-                include_in_switch: mqtt_config.include_in_switch,
-                switch_name: mqtt_config.switch_name.clone(),
-                switch_is_safe: false,
-                switch_timeout_seconds: switch_timeout,
-                switch_hold_time_seconds: switch_hold_time,
-                switch_pending_is_safe: None,
-                switch_pending_since: None,
-                switch_error: Some("Monitor disabled".to_string()),
             });
             active_ids.insert(id.clone());
         }
@@ -131,8 +121,6 @@ pub async fn get_status(
     // Add disabled ALPACA monitors
     for (id, alpaca_config) in &config.alpaca_monitors {
         if !alpaca_config.enabled && !active_ids.contains(id) {
-            let switch_timeout = alpaca_config.switch_timeout_seconds.unwrap_or(alpaca_config.timeout_seconds);
-            let switch_hold_time = alpaca_config.switch_hold_time_seconds.unwrap_or(alpaca_config.hold_time_seconds);
             statuses.push(crate::config::models::MonitorStatus {
                 id: id.clone(),
                 name: alpaca_config.name.clone(),
@@ -148,14 +136,6 @@ pub async fn get_status(
                 pending_is_safe: None,
                 pending_since: None,
                 include_in_safety: alpaca_config.include_in_safety,
-                include_in_switch: alpaca_config.include_in_switch,
-                switch_name: alpaca_config.switch_name.clone(),
-                switch_is_safe: false,
-                switch_timeout_seconds: switch_timeout,
-                switch_hold_time_seconds: switch_hold_time,
-                switch_pending_is_safe: None,
-                switch_pending_since: None,
-                switch_error: Some("Monitor disabled".to_string()),
             });
         }
     }
@@ -443,6 +423,7 @@ pub struct MeasurementInfo {
     pub value: f64,
     pub threshold: f64,
     pub is_safe: bool,
+    pub is_monitored: bool, // Whether this measurement is included in safety determination
     pub timeout_seconds: Option<u64>,
     pub last_update: Option<String>,
 }
@@ -695,14 +676,14 @@ pub async fn get_weather_status(
             // Helper function to add a measurement
             let mut add_measurement = |key: &str, name: &str, value: f64| {
                 // Check if this measurement is being monitored for safety
-                let (threshold, is_safe, timeout_seconds) = if let Some(status) = safety_status {
+                let (threshold, is_safe, is_monitored, timeout_seconds) = if let Some(status) = safety_status {
                     if let Some(m) = status.measurements.get(key) {
-                        (m.threshold, m.is_safe, m.timeout_seconds)
+                        (m.threshold, m.is_safe, true, m.timeout_seconds)
                     } else {
-                        (0.0, true, None) // Not monitored
+                        (0.0, true, false, None) // Not monitored
                     }
                 } else {
-                    (0.0, true, None) // No safety monitoring
+                    (0.0, true, false, None) // No safety monitoring configured
                 };
 
                 measurements.insert(key.to_string(), MeasurementInfo {
@@ -710,18 +691,20 @@ pub async fn get_weather_status(
                     value,
                     threshold,
                     is_safe,
+                    is_monitored,
                     timeout_seconds,
                     last_update: Some(last_update_str.clone()),
                 });
             };
 
             // Add all available measurements
-            add_measurement("temperature", "Temperature (°C)", obs.temperature);
-            add_measurement("humidity", "Humidity (%)", obs.humidity);
-            add_measurement("pressure", "Pressure (MB)", obs.pressure);
-            add_measurement("wind_speed", "Wind Speed (m/s)", obs.wind_avg);
-            add_measurement("wind_gust", "Wind Gust (m/s)", obs.wind_gust);
-            add_measurement("wind_direction", "Wind Direction (°)", obs.wind_direction);
+            // Keys must match those used in weather_monitor.rs for safety threshold lookups
+            add_measurement("Temperature", "Temperature (°C)", obs.temperature);
+            add_measurement("Humidity", "Humidity (%)", obs.humidity);
+            add_measurement("Pressure", "Pressure (MB)", obs.pressure);
+            add_measurement("Wind Speed", "Wind Speed (m/s)", obs.wind_avg);
+            add_measurement("Wind Gust", "Wind Gust (m/s)", obs.wind_gust);
+            add_measurement("Wind Direction", "Wind Direction (°)", obs.wind_direction);
 
             // Calculate rain rate (mm/hour)
             let rain_rate = if let Some(prev_obs) = tempest_data.previous_observations.get(&obs.serial_number) {
@@ -729,15 +712,15 @@ pub async fn get_weather_status(
             } else {
                 0.0
             };
-            add_measurement("rain_rate", "Rain Rate (mm/hr)", rain_rate);
+            add_measurement("Rain Rate", "Rain Rate (mm/hr)", rain_rate);
 
             // Calculate dew point
             let dew_point = calculate_dew_point(obs.temperature, obs.humidity);
-            add_measurement("dew_point", "Dew Point (°C)", dew_point);
+            add_measurement("Dew Point", "Dew Point (°C)", dew_point);
 
             // Convert illuminance to sky brightness (mag/arcsec²)
             let sky_brightness = lux_to_sky_brightness(obs.illuminance);
-            add_measurement("sky_brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
+            add_measurement("Sky Brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
         }
 
         // Determine overall safety status
