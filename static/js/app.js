@@ -3,6 +3,12 @@ let config = {
     mqtt_servers: {},
     mqtt_monitors: {},
     alpaca_monitors: {},
+    switch_device: {
+        enabled: true,
+        name: null,
+        description: null,
+        auto_connect: true
+    },
     server_port: 8080,
     device_name: "LLAMA Safety Monitor",
     location: "",
@@ -153,6 +159,19 @@ function renderAll() {
     renderMqttMonitors();
     renderAlpacaMonitors();
     renderSettings();
+    renderSwitchDeviceSettings();
+}
+
+// Toggle MQTT switch fields visibility
+function toggleMqttSwitchFields() {
+    const enabled = document.getElementById('mqtt-monitor-include-in-switch').checked;
+    document.getElementById('mqtt-switch-fields').style.display = enabled ? 'block' : 'none';
+}
+
+// Toggle Alpaca switch fields visibility
+function toggleAlpacaSwitchFields() {
+    const enabled = document.getElementById('alpaca-monitor-include-in-switch').checked;
+    document.getElementById('alpaca-switch-fields').style.display = enabled ? 'block' : 'none';
 }
 
 // Render monitor status
@@ -432,6 +451,13 @@ function showAddMqttMonitor() {
     document.getElementById('mqtt-monitor-safe-when-true').checked = true;
     document.getElementById('mqtt-monitor-timeout').value = '300';
     document.getElementById('mqtt-monitor-hold-time').value = '0';
+    // Switch integration fields
+    document.getElementById('mqtt-monitor-include-in-safety').checked = true;
+    document.getElementById('mqtt-monitor-include-in-switch').checked = false;
+    document.getElementById('mqtt-monitor-switch-name').value = '';
+    document.getElementById('mqtt-monitor-switch-timeout').value = '';
+    document.getElementById('mqtt-monitor-switch-hold-time').value = '';
+    document.getElementById('mqtt-switch-fields').style.display = 'none';
 }
 
 function editMqttMonitor(id) {
@@ -453,6 +479,15 @@ function editMqttMonitor(id) {
     document.getElementById('mqtt-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('mqtt-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('mqtt-monitor-hold-time').value = monitor.hold_time_seconds || 0;
+    // Switch integration fields
+    const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
+    const includeInSwitch = monitor.include_in_switch || false;
+    document.getElementById('mqtt-monitor-include-in-safety').checked = includeInSafety;
+    document.getElementById('mqtt-monitor-include-in-switch').checked = includeInSwitch;
+    document.getElementById('mqtt-monitor-switch-name').value = monitor.switch_name || '';
+    document.getElementById('mqtt-monitor-switch-timeout').value = monitor.switch_timeout_seconds || '';
+    document.getElementById('mqtt-monitor-switch-hold-time').value = monitor.switch_hold_time_seconds || '';
+    document.getElementById('mqtt-switch-fields').style.display = includeInSwitch ? 'block' : 'none';
 }
 
 function cancelMqttMonitor() {
@@ -472,6 +507,12 @@ function saveMqttMonitor() {
     const safe_when_true = document.getElementById('mqtt-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('mqtt-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('mqtt-monitor-hold-time').value);
+    // Switch integration fields
+    const include_in_safety = document.getElementById('mqtt-monitor-include-in-safety').checked;
+    const include_in_switch = document.getElementById('mqtt-monitor-include-in-switch').checked;
+    const switch_name = document.getElementById('mqtt-monitor-switch-name').value.trim();
+    const switch_timeout_raw = document.getElementById('mqtt-monitor-switch-timeout').value.trim();
+    const switch_hold_time_raw = document.getElementById('mqtt-monitor-switch-hold-time').value.trim();
 
     if (!id || !name || !server_id || !topic || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -484,6 +525,11 @@ function saveMqttMonitor() {
         return;
     }
 
+    // Preserve enabled state when editing
+    const existingEnabled = currentEditId && config.mqtt_monitors[currentEditId]
+        ? config.mqtt_monitors[currentEditId].enabled
+        : true;
+
     config.mqtt_monitors[id] = {
         id,
         name,
@@ -495,7 +541,12 @@ function saveMqttMonitor() {
         safe_when_true,
         timeout_seconds,
         hold_time_seconds,
-        enabled: true // New monitors are enabled by default
+        enabled: existingEnabled,
+        include_in_safety,
+        include_in_switch,
+        switch_name: include_in_switch && switch_name ? switch_name : null,
+        switch_timeout_seconds: include_in_switch && switch_timeout_raw ? parseInt(switch_timeout_raw) : null,
+        switch_hold_time_seconds: include_in_switch && switch_hold_time_raw ? parseInt(switch_hold_time_raw) : null
     };
 
     saveConfig().then(success => {
@@ -559,6 +610,13 @@ function showAddAlpacaMonitor() {
     document.getElementById('alpaca-monitor-safe-when-true').checked = true;
     document.getElementById('alpaca-monitor-timeout').value = '300';
     document.getElementById('alpaca-monitor-hold-time').value = '0';
+    // Switch integration fields
+    document.getElementById('alpaca-monitor-include-in-safety').checked = true;
+    document.getElementById('alpaca-monitor-include-in-switch').checked = false;
+    document.getElementById('alpaca-monitor-switch-name').value = '';
+    document.getElementById('alpaca-monitor-switch-timeout').value = '';
+    document.getElementById('alpaca-monitor-switch-hold-time').value = '';
+    document.getElementById('alpaca-switch-fields').style.display = 'none';
 }
 
 function editAlpacaMonitor(id) {
@@ -581,6 +639,15 @@ function editAlpacaMonitor(id) {
     document.getElementById('alpaca-monitor-safe-when-true').checked = monitor.safe_when_true;
     document.getElementById('alpaca-monitor-timeout').value = monitor.timeout_seconds || 300;
     document.getElementById('alpaca-monitor-hold-time').value = monitor.hold_time_seconds || 0;
+    // Switch integration fields
+    const includeInSafety = monitor.include_in_safety !== undefined ? monitor.include_in_safety : true;
+    const includeInSwitch = monitor.include_in_switch || false;
+    document.getElementById('alpaca-monitor-include-in-safety').checked = includeInSafety;
+    document.getElementById('alpaca-monitor-include-in-switch').checked = includeInSwitch;
+    document.getElementById('alpaca-monitor-switch-name').value = monitor.switch_name || '';
+    document.getElementById('alpaca-monitor-switch-timeout').value = monitor.switch_timeout_seconds || '';
+    document.getElementById('alpaca-monitor-switch-hold-time').value = monitor.switch_hold_time_seconds || '';
+    document.getElementById('alpaca-switch-fields').style.display = includeInSwitch ? 'block' : 'none';
 }
 
 function cancelAlpacaMonitor() {
@@ -602,6 +669,12 @@ function saveAlpacaMonitor() {
     const safe_when_true = document.getElementById('alpaca-monitor-safe-when-true').checked;
     const timeout_seconds = parseInt(document.getElementById('alpaca-monitor-timeout').value);
     const hold_time_seconds = parseInt(document.getElementById('alpaca-monitor-hold-time').value);
+    // Switch integration fields
+    const include_in_safety = document.getElementById('alpaca-monitor-include-in-safety').checked;
+    const include_in_switch = document.getElementById('alpaca-monitor-include-in-switch').checked;
+    const switch_name = document.getElementById('alpaca-monitor-switch-name').value.trim();
+    const switch_timeout_raw = document.getElementById('alpaca-monitor-switch-timeout').value.trim();
+    const switch_hold_time_raw = document.getElementById('alpaca-monitor-switch-hold-time').value.trim();
 
     if (!id || !name || !host || !port || !device_type || isNaN(device_number) || !property || isNaN(threshold) || isNaN(timeout_seconds) || timeout_seconds < 0 || isNaN(hold_time_seconds) || hold_time_seconds < 0) {
         showNotification('Please fill in all required fields', 'error');
@@ -613,6 +686,11 @@ function saveAlpacaMonitor() {
         showNotification('Monitor ID already exists', 'error');
         return;
     }
+
+    // Preserve enabled state when editing
+    const existingEnabled = currentEditId && config.alpaca_monitors[currentEditId]
+        ? config.alpaca_monitors[currentEditId].enabled
+        : true;
 
     config.alpaca_monitors[id] = {
         id,
@@ -627,7 +705,12 @@ function saveAlpacaMonitor() {
         safe_when_true,
         timeout_seconds,
         hold_time_seconds,
-        enabled: true // New monitors are enabled by default
+        enabled: existingEnabled,
+        include_in_safety,
+        include_in_switch,
+        switch_name: include_in_switch && switch_name ? switch_name : null,
+        switch_timeout_seconds: include_in_switch && switch_timeout_raw ? parseInt(switch_timeout_raw) : null,
+        switch_hold_time_seconds: include_in_switch && switch_hold_time_raw ? parseInt(switch_hold_time_raw) : null
     };
 
     saveConfig().then(success => {
@@ -664,6 +747,41 @@ function saveSettings() {
     saveConfig().then(success => {
         if (success) {
             showNotification('Settings saved. Note: Server port and location changes require restart.', 'success');
+        }
+    });
+}
+
+// Switch Device Settings
+function renderSwitchDeviceSettings() {
+    const switchDevice = config.switch_device || {
+        enabled: true,
+        name: null,
+        description: null,
+        auto_connect: true
+    };
+
+    document.getElementById('switch-device-enabled').checked = switchDevice.enabled !== false;
+    document.getElementById('switch-device-name').value = switchDevice.name || '';
+    document.getElementById('switch-device-description').value = switchDevice.description || '';
+    document.getElementById('switch-device-auto-connect').checked = switchDevice.auto_connect !== false;
+}
+
+function saveSwitchDeviceSettings() {
+    const enabled = document.getElementById('switch-device-enabled').checked;
+    const name = document.getElementById('switch-device-name').value.trim();
+    const description = document.getElementById('switch-device-description').value.trim();
+    const auto_connect = document.getElementById('switch-device-auto-connect').checked;
+
+    config.switch_device = {
+        enabled,
+        name: name || null,
+        description: description || null,
+        auto_connect
+    };
+
+    saveConfig().then(success => {
+        if (success) {
+            showNotification('Switch device settings saved. Changes take effect after reload.', 'success');
         }
     });
 }
@@ -766,6 +884,15 @@ async function autoConnectDevices() {
                     });
                 }
             }
+        }
+
+        // Connect switch device if auto_connect enabled
+        if (config.switch_device && config.switch_device.enabled && config.switch_device.auto_connect) {
+            await fetch('/api/v1/switch/0/connected', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'Connected=true'
+            });
         }
 
         console.log('Auto-connected ASCOM devices');

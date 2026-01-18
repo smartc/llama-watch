@@ -166,6 +166,44 @@
                         <input type="number" id="mqtt-monitor-hold-time" value="0" min="0">
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
+
+                    <h3>Safety & Switch Integration</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="mqtt-monitor-include-in-safety" checked>
+                                <span>Include in Safety Monitor</span>
+                            </label>
+                            <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="mqtt-monitor-include-in-switch" onchange="toggleMqttSwitchFields()">
+                                <span>Expose as ASCOM Switch</span>
+                            </label>
+                            <div class="info-text">When checked, this monitor is exposed as a read-only ASCOM Switch</div>
+                        </div>
+                    </div>
+                    <div id="mqtt-switch-fields" style="display: none;">
+                        <div class="form-group">
+                            <label>Switch Name</label>
+                            <input type="text" id="mqtt-monitor-switch-name" placeholder="e.g., isCloudy">
+                            <div class="info-text">Display name for the ASCOM Switch (defaults to monitor name if blank)</div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Switch Timeout (seconds)</label>
+                                <input type="number" id="mqtt-monitor-switch-timeout" value="" min="0" placeholder="Same as above">
+                                <div class="info-text">Switch-specific timeout (leave blank to use safety timeout)</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Switch Hold Time (seconds)</label>
+                                <input type="number" id="mqtt-monitor-switch-hold-time" value="" min="0" placeholder="Same as above">
+                                <div class="info-text">Switch-specific hold time (leave blank to use safety hold time)</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <button class="btn btn-success" onclick="saveMqttMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelMqttMonitor()">Cancel</button>
                 </div>
@@ -250,6 +288,44 @@
                         <input type="number" id="alpaca-monitor-hold-time" value="0" min="0">
                         <div class="info-text">Minimum time a condition must hold before changing state (0 = immediate change, no hold time)</div>
                     </div>
+
+                    <h3>Safety & Switch Integration</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="alpaca-monitor-include-in-safety" checked>
+                                <span>Include in Safety Monitor</span>
+                            </label>
+                            <div class="info-text">When checked, this monitor contributes to the overall safety status</div>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="alpaca-monitor-include-in-switch" onchange="toggleAlpacaSwitchFields()">
+                                <span>Expose as ASCOM Switch</span>
+                            </label>
+                            <div class="info-text">When checked, this monitor is exposed as a read-only ASCOM Switch</div>
+                        </div>
+                    </div>
+                    <div id="alpaca-switch-fields" style="display: none;">
+                        <div class="form-group">
+                            <label>Switch Name</label>
+                            <input type="text" id="alpaca-monitor-switch-name" placeholder="e.g., isRoofOpen">
+                            <div class="info-text">Display name for the ASCOM Switch (defaults to monitor name if blank)</div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Switch Timeout (seconds)</label>
+                                <input type="number" id="alpaca-monitor-switch-timeout" value="" min="0" placeholder="Same as above">
+                                <div class="info-text">Switch-specific timeout (leave blank to use safety timeout)</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Switch Hold Time (seconds)</label>
+                                <input type="number" id="alpaca-monitor-switch-hold-time" value="" min="0" placeholder="Same as above">
+                                <div class="info-text">Switch-specific hold time (leave blank to use safety hold time)</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <button class="btn btn-success" onclick="saveAlpacaMonitor()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelAlpacaMonitor()">Cancel</button>
                 </div>
@@ -548,6 +624,37 @@
                         <div class="info-text">Port requires application restart to take effect</div>
                     </div>
                     <button class="btn btn-success" onclick="saveSettings()">Save Settings</button>
+                </div>
+
+                <div class="section">
+                    <h2>ASCOM Switch Device</h2>
+                    <div class="info-text" style="margin-bottom: 15px;">
+                        The Switch device exposes monitors with "Expose as ASCOM Switch" enabled as read-only boolean switches.
+                        This allows automation software like NINA to read individual monitor states independently of the overall safety status.
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="switch-device-enabled" checked>
+                            <span>Enable Switch Device</span>
+                        </label>
+                        <div class="info-text">When enabled, the ASCOM Switch device is available for discovery</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Switch Device Name</label>
+                        <input type="text" id="switch-device-name" placeholder="LLAMA Switch Device">
+                    </div>
+                    <div class="form-group">
+                        <label>Switch Device Description</label>
+                        <input type="text" id="switch-device-description" placeholder="Exposes monitor conditions as read-only switches">
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="switch-device-auto-connect" checked>
+                            <span>Auto-Connect on Startup</span>
+                        </label>
+                        <div class="info-text">If checked, device will start in connected state</div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveSwitchDeviceSettings()">Save Switch Settings</button>
                 </div>
 
                 <div class="section">
