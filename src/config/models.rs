@@ -47,6 +47,17 @@ pub struct MqttMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
+    // Safety vs Switch inclusion
+    #[serde(default = "default_include_in_safety")]
+    pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
+    #[serde(default)]
+    pub include_in_switch: bool, // Expose this monitor as an ASCOM Switch (default false)
+    #[serde(default)]
+    pub switch_name: Option<String>, // Display name for the switch (defaults to monitor name)
+    #[serde(default)]
+    pub switch_timeout_seconds: Option<u64>, // Switch-specific timeout (defaults to timeout_seconds)
+    #[serde(default)]
+    pub switch_hold_time_seconds: Option<u64>, // Switch-specific hold time (defaults to hold_time_seconds)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +78,17 @@ pub struct AlpacaMonitorConfig {
     pub hold_time_seconds: u64, // Minimum time a condition must hold before changing state (0 = immediate)
     #[serde(default = "default_enabled")]
     pub enabled: bool, // If false, monitor is ignored
+    // Safety vs Switch inclusion
+    #[serde(default = "default_include_in_safety")]
+    pub include_in_safety: bool, // Include this monitor in overall safety evaluation (default true)
+    #[serde(default)]
+    pub include_in_switch: bool, // Expose this monitor as an ASCOM Switch (default false)
+    #[serde(default)]
+    pub switch_name: Option<String>, // Display name for the switch (defaults to monitor name)
+    #[serde(default)]
+    pub switch_timeout_seconds: Option<u64>, // Switch-specific timeout (defaults to timeout_seconds)
+    #[serde(default)]
+    pub switch_hold_time_seconds: Option<u64>, // Switch-specific hold time (defaults to hold_time_seconds)
 }
 
 fn default_timeout() -> u64 {
@@ -77,12 +99,40 @@ fn default_enabled() -> bool {
     true
 }
 
+fn default_include_in_safety() -> bool {
+    true
+}
+
 fn default_server_interface() -> String {
     "127.0.0.1".to_string()
 }
 
 fn default_udp_port() -> u16 {
     50222
+}
+
+/// Configuration for the ASCOM Switch device
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwitchDeviceConfig {
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub name: Option<String>, // Device name (defaults to "LLAMA Switch Device")
+    #[serde(default)]
+    pub description: Option<String>, // Device description
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool, // If true, device starts connected
+}
+
+impl Default for SwitchDeviceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            name: None,
+            description: None,
+            auto_connect: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -95,6 +145,8 @@ pub struct AppConfig {
     pub alpaca_monitors: HashMap<String, AlpacaMonitorConfig>,
     #[serde(default)]
     pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Key is device_number
+    #[serde(default)]
+    pub switch_device: SwitchDeviceConfig, // ASCOM Switch device configuration
     #[serde(default)]
     pub server_port: u16,
     #[serde(default = "default_server_interface")]
@@ -122,6 +174,7 @@ impl AppConfig {
             mqtt_monitors: HashMap::new(),
             alpaca_monitors: HashMap::new(),
             weather_devices: HashMap::new(),
+            switch_device: SwitchDeviceConfig::default(),
             server_port: 8080,
             server_interface: default_server_interface(),
             tempest_udp_port: default_udp_port(),
@@ -160,6 +213,17 @@ pub struct MonitorStatus {
     pub hold_time_seconds: u64,
     pub pending_is_safe: Option<bool>,
     pub pending_since: Option<chrono::DateTime<chrono::Utc>>,
+    // Safety/Switch inclusion flags
+    pub include_in_safety: bool,
+    pub include_in_switch: bool,
+    pub switch_name: Option<String>,
+    // Switch-specific state (independent of safety state)
+    pub switch_is_safe: bool,
+    pub switch_timeout_seconds: u64,
+    pub switch_hold_time_seconds: u64,
+    pub switch_pending_is_safe: Option<bool>,
+    pub switch_pending_since: Option<chrono::DateTime<chrono::Utc>>,
+    pub switch_error: Option<String>,
 }
 
 // Weather device configuration

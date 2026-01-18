@@ -1,6 +1,33 @@
 {
-  "mqtt_servers": {},
-  "mqtt_monitors": {},
+  "mqtt_servers": {
+    "local": {
+      "id": "local",
+      "host": "localhost",
+      "port": 1883,
+      "username": null,
+      "password": null
+    }
+  },
+  "mqtt_monitors": {
+    "cloud_sensor": {
+      "id": "cloud_sensor",
+      "name": "Cloud Sensor",
+      "server_id": "local",
+      "topic": "observatory/cloudsensor",
+      "json_path": "cloudiness",
+      "threshold": 50.0,
+      "operator": "greaterthan",
+      "safe_when_true": false,
+      "timeout_seconds": 300,
+      "hold_time_seconds": 1800,
+      "enabled": true,
+      "include_in_safety": true,
+      "include_in_switch": true,
+      "switch_name": "isCloudy",
+      "switch_timeout_seconds": 300,
+      "switch_hold_time_seconds": 300
+    }
+  },
   "alpaca_monitors": {},
   "weather_devices": {
     "0": {
@@ -44,6 +71,12 @@
         }
       }
     }
+  },
+  "switch_device": {
+    "enabled": true,
+    "name": "LLAMA Switch Device",
+    "description": "Exposes monitor conditions as read-only switches for automation",
+    "auto_connect": true
   },
   "server_port": 8080,
   "server_interface": "127.0.0.1",

@@ -93,18 +93,24 @@ impl MonitorState {
     pub fn is_safe(&self) -> bool {
         let all_statuses = self.get_all_statuses();
 
-        if all_statuses.is_empty() {
-            // No monitors configured/enabled - cannot determine safety, report unsafe
+        // Filter to only monitors that should contribute to safety
+        let safety_statuses: Vec<_> = all_statuses
+            .iter()
+            .filter(|s| s.include_in_safety)
+            .collect();
+
+        if safety_statuses.is_empty() {
+            // No monitors configured/enabled for safety - cannot determine safety, report unsafe
             return false;
         }
 
-        // Check if any monitors are still initializing (no data yet)
-        let has_initializing = all_statuses.iter().any(|s| s.last_update.is_none());
+        // Check if any safety monitors are still initializing (no data yet)
+        let has_initializing = safety_statuses.iter().any(|s| s.last_update.is_none());
 
         if has_initializing {
             // If we have monitors that are initializing, use graceful handling
             // Check the monitors that DO have data
-            let monitors_with_data: Vec<_> = all_statuses
+            let monitors_with_data: Vec<_> = safety_statuses
                 .iter()
                 .filter(|s| s.last_update.is_some())
                 .collect();
@@ -128,8 +134,8 @@ impl MonitorState {
             return self.last_stable_safe_state.unwrap_or(false);
         }
 
-        // All monitors have data - calculate normal safety
-        let is_safe = all_statuses.iter().all(|status| {
+        // All safety monitors have data - calculate normal safety
+        let is_safe = safety_statuses.iter().all(|status| {
             status.is_safe && status.error.is_none()
         });
 
@@ -143,12 +149,18 @@ impl MonitorState {
     fn is_safe_ignoring_pending(&self) -> bool {
         let all_statuses = self.get_all_statuses();
 
-        if all_statuses.is_empty() {
-            return false; // No monitors = unsafe
+        // Filter to only monitors that should contribute to safety
+        let safety_statuses: Vec<_> = all_statuses
+            .iter()
+            .filter(|s| s.include_in_safety)
+            .collect();
+
+        if safety_statuses.is_empty() {
+            return false; // No safety monitors = unsafe
         }
 
         // Only check monitors that have data
-        let monitors_with_data: Vec<_> = all_statuses
+        let monitors_with_data: Vec<_> = safety_statuses
             .iter()
             .filter(|s| s.last_update.is_some())
             .collect();
@@ -176,13 +188,19 @@ impl MonitorState {
 
         let all_statuses = self.get_all_statuses();
 
-        if all_statuses.is_empty() {
+        // Filter to only monitors that contribute to safety
+        let safety_statuses: Vec<_> = all_statuses
+            .iter()
+            .filter(|s| s.include_in_safety)
+            .collect();
+
+        if safety_statuses.is_empty() {
             return None;
         }
 
         let mut unsafe_monitors = Vec::new();
 
-        for status in all_statuses {
+        for status in safety_statuses {
             if let Some(error) = &status.error {
                 unsafe_monitors.push(MonitorComment {
                     monitor: status.name.clone(),
@@ -205,6 +223,27 @@ impl MonitorState {
         } else {
             Some(SafetyComments { unsafe_monitors })
         }
+    }
+
+    /// Get all monitors that are configured to be switches
+    pub fn get_switch_statuses(&self) -> Vec<MonitorStatus> {
+        self.get_all_statuses()
+            .into_iter()
+            .filter(|s| s.include_in_switch)
+            .collect()
+    }
+
+    /// Get the number of configured switches
+    pub fn get_switch_count(&self) -> usize {
+        self.get_all_statuses()
+            .into_iter()
+            .filter(|s| s.include_in_switch)
+            .count()
+    }
+
+    /// Get switch status by index (0-based)
+    pub fn get_switch_by_index(&self, index: usize) -> Option<MonitorStatus> {
+        self.get_switch_statuses().into_iter().nth(index)
     }
 
     pub fn get_all_statuses(&self) -> Vec<MonitorStatus> {

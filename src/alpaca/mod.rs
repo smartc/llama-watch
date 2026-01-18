@@ -4,6 +4,7 @@ pub mod management;
 pub mod discovery;
 pub mod observing_conditions;
 pub mod case_insensitive;
+pub mod switch;
 
 use axum::{
     routing::{get, put},
@@ -13,6 +14,7 @@ use axum::{
 use safety_monitor::SharedAppState;
 use observing_conditions::SharedObservingConditionsState;
 pub use management::SharedManagementState;
+pub use switch::{SharedSwitchAppState, SwitchAppState, SwitchDevice};
 
 /// Redirect to main web UI status tab
 async fn setup_main() -> Redirect {
@@ -209,6 +211,109 @@ pub fn create_observingconditions_router(state: SharedObservingConditionsState) 
         .route(
             "/api/v1/observingconditions/:device/supportedactions",
             get(observing_conditions::get_supportedactions),
+        )
+        .with_state(state)
+}
+
+pub fn create_switch_router(state: SharedSwitchAppState) -> Router {
+    Router::new()
+        // Setup pages (redirects to web UI)
+        .route("/setup/v1/switch/:device/setup", get(setup_device))
+        // Switch-specific properties
+        .route(
+            "/api/v1/switch/:device/maxswitch",
+            get(switch::get_maxswitch),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/canwrite",
+            get(switch::get_canwrite),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/getswitch",
+            get(switch::get_switch),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/getswitchname",
+            get(switch::get_switchname),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/getswitchdescription",
+            get(switch::get_switchdescription),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/getswitchvalue",
+            get(switch::get_switchvalue),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/minswitchvalue",
+            get(switch::get_minswitchvalue),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/maxswitchvalue",
+            get(switch::get_maxswitchvalue),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/switchstep",
+            get(switch::get_switchstep),
+        )
+        // Write operations (all read-only, return errors)
+        .route(
+            "/api/v1/switch/:device/:switch_id/setswitch",
+            put(switch::put_setswitch),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/setswitchvalue",
+            put(switch::put_setswitchvalue),
+        )
+        .route(
+            "/api/v1/switch/:device/:switch_id/setswitchname",
+            put(switch::put_setswitchname),
+        )
+        // Common properties
+        .route(
+            "/api/v1/switch/:device/connected",
+            get(switch::get_connected).put(switch::put_connected),
+        )
+        .route(
+            "/api/v1/switch/:device/name",
+            get(switch::get_name),
+        )
+        .route(
+            "/api/v1/switch/:device/description",
+            get(switch::get_description),
+        )
+        .route(
+            "/api/v1/switch/:device/driverinfo",
+            get(switch::get_driverinfo),
+        )
+        .route(
+            "/api/v1/switch/:device/driverversion",
+            get(switch::get_driverversion),
+        )
+        .route(
+            "/api/v1/switch/:device/interfaceversion",
+            get(switch::get_interfaceversion),
+        )
+        .route(
+            "/api/v1/switch/:device/supportedactions",
+            get(switch::get_supportedactions),
+        )
+        // Common methods
+        .route(
+            "/api/v1/switch/:device/action",
+            put(switch::put_action),
+        )
+        .route(
+            "/api/v1/switch/:device/commandblind",
+            put(switch::put_commandblind),
+        )
+        .route(
+            "/api/v1/switch/:device/commandbool",
+            put(switch::put_commandbool),
+        )
+        .route(
+            "/api/v1/switch/:device/commandstring",
+            put(switch::put_commandstring),
         )
         .with_state(state)
 }

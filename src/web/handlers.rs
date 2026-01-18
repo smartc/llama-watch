@@ -90,6 +90,8 @@ pub async fn get_status(
     // Add disabled MQTT monitors
     for (id, mqtt_config) in &config.mqtt_monitors {
         if !mqtt_config.enabled && !active_ids.contains(id) {
+            let switch_timeout = mqtt_config.switch_timeout_seconds.unwrap_or(mqtt_config.timeout_seconds);
+            let switch_hold_time = mqtt_config.switch_hold_time_seconds.unwrap_or(mqtt_config.hold_time_seconds);
             statuses.push(crate::config::models::MonitorStatus {
                 id: id.clone(),
                 name: mqtt_config.name.clone(),
@@ -104,6 +106,15 @@ pub async fn get_status(
                 hold_time_seconds: mqtt_config.hold_time_seconds,
                 pending_is_safe: None,
                 pending_since: None,
+                include_in_safety: mqtt_config.include_in_safety,
+                include_in_switch: mqtt_config.include_in_switch,
+                switch_name: mqtt_config.switch_name.clone(),
+                switch_is_safe: false,
+                switch_timeout_seconds: switch_timeout,
+                switch_hold_time_seconds: switch_hold_time,
+                switch_pending_is_safe: None,
+                switch_pending_since: None,
+                switch_error: Some("Monitor disabled".to_string()),
             });
             active_ids.insert(id.clone());
         }
@@ -112,6 +123,8 @@ pub async fn get_status(
     // Add disabled ALPACA monitors
     for (id, alpaca_config) in &config.alpaca_monitors {
         if !alpaca_config.enabled && !active_ids.contains(id) {
+            let switch_timeout = alpaca_config.switch_timeout_seconds.unwrap_or(alpaca_config.timeout_seconds);
+            let switch_hold_time = alpaca_config.switch_hold_time_seconds.unwrap_or(alpaca_config.hold_time_seconds);
             statuses.push(crate::config::models::MonitorStatus {
                 id: id.clone(),
                 name: alpaca_config.name.clone(),
@@ -126,6 +139,15 @@ pub async fn get_status(
                 hold_time_seconds: alpaca_config.hold_time_seconds,
                 pending_is_safe: None,
                 pending_since: None,
+                include_in_safety: alpaca_config.include_in_safety,
+                include_in_switch: alpaca_config.include_in_switch,
+                switch_name: alpaca_config.switch_name.clone(),
+                switch_is_safe: false,
+                switch_timeout_seconds: switch_timeout,
+                switch_hold_time_seconds: switch_hold_time,
+                switch_pending_is_safe: None,
+                switch_pending_since: None,
+                switch_error: Some("Monitor disabled".to_string()),
             });
         }
     }

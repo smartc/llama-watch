@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use super::safety_monitor::{SafetyMonitor, SharedMonitorState};
+use super::switch::SwitchDevice;
 use crate::weather::ObservingConditionsDevice;
 use super::models::{AlpacaResponse, QueryParams};
 
@@ -13,6 +14,7 @@ pub struct ManagementState {
     pub safety_monitor: Arc<SafetyMonitor>,
     pub monitor_state: SharedMonitorState,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
+    pub switch_device: Option<Arc<SwitchDevice>>,
 }
 
 pub type SharedManagementState = Arc<ManagementState>;
@@ -103,6 +105,16 @@ pub async fn get_configured_devices(
             device_type: "ObservingConditions".to_string(),
             device_number: *device_number,
             unique_i_d: format!("{}-observingconditions-{}", generate_unique_id(), device_number),
+        });
+    }
+
+    // Add Switch device (if configured)
+    if let Some(switch_device) = &state.switch_device {
+        devices.push(DeviceDescription {
+            device_name: switch_device.device_name.clone(),
+            device_type: "Switch".to_string(),
+            device_number: 0,
+            unique_i_d: format!("{}-switch-0", generate_unique_id()),
         });
     }
 
