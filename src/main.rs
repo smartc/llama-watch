@@ -2,6 +2,7 @@ mod alpaca;
 mod config;
 mod logging;
 mod monitors;
+mod switches;
 mod web;
 mod weather;
 
@@ -21,6 +22,7 @@ use alpaca::{SwitchDevice, SwitchAppState};
 use config::load_config;
 use logging::DebugLogger;
 use monitors::MonitorState;
+use switches::SwitchManager;
 use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor};
 use web::handlers::WebState;
 use std::collections::HashMap;
@@ -40,11 +42,12 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = load_config().await?;
     info!(
-        "Loaded configuration: {} MQTT servers, {} MQTT monitors, {} Alpaca monitors, {} weather devices",
+        "Loaded configuration: {} MQTT servers, {} MQTT monitors, {} Alpaca monitors, {} weather devices, {} switches",
         config.mqtt_servers.len(),
         config.mqtt_monitors.len(),
         config.alpaca_monitors.len(),
-        config.weather_devices.len()
+        config.weather_devices.len(),
+        config.switches.len()
     );
 
     let server_port = if config.server_port > 0 {
@@ -133,22 +136,30 @@ async fn main() -> Result<()> {
         weather_data: weather_data_accessor.clone(),
     });
 
-    // Create Switch device (if enabled)
-    let switch_device = if config.switch_device.enabled {
+    // Create Switch device and manager (if enabled)
+    let (switch_device, switch_manager) = if config.switch_device.enabled {
         let device = Arc::new(SwitchDevice::new(&config.switch_device));
         info!("🔘 Switch device created: {}", device.device_name);
-        Some(device)
+
+        // Initialize switch manager with configured switches
+        let mut manager = SwitchManager::new(shared_monitor_state.clone());
+        manager.initialize(&config);
+        info!("🔘 Switch manager initialized with {} switches", manager.get_switch_count());
+
+        let shared_manager = Arc::new(RwLock::new(manager));
+        (Some(device), Some(shared_manager))
     } else {
-        None
+        (None, None)
     };
 
     // Create Switch application state (if switch device is enabled)
-    let switch_app_state = switch_device.as_ref().map(|device| {
-        Arc::new(SwitchAppState {
+    let switch_app_state = match (&switch_device, &switch_manager) {
+        (Some(device), Some(manager)) => Some(Arc::new(SwitchAppState {
             switch_device: device.clone(),
-            monitor_state: shared_monitor_state.clone(),
-        })
-    });
+            switch_manager: manager.clone(),
+        })),
+        _ => None,
+    };
 
     // Create management state for management API endpoints
     let management_state = Arc::new(ManagementState {
@@ -162,6 +173,7 @@ async fn main() -> Result<()> {
     let web_state = Arc::new(WebState {
         config: Arc::new(RwLock::new(config)),
         monitor_state: shared_monitor_state.clone(),
+        switch_manager: switch_manager.clone(),
         debug_logger: debug_logger.clone(),
         safety_monitor: safety_monitor.clone(),
         oc_devices: oc_devices_shared.clone(),

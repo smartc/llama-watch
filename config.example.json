@@ -9,11 +9,11 @@
     }
   },
   "mqtt_monitors": {
-    "cloud_sensor": {
-      "id": "cloud_sensor",
-      "name": "Cloud Sensor",
+    "cloud_sensor_1": {
+      "id": "cloud_sensor_1",
+      "name": "Cloud Sensor Primary",
       "server_id": "local",
-      "topic": "observatory/cloudsensor",
+      "topic": "observatory/cloudsensor1",
       "json_path": "cloudiness",
       "threshold": 50.0,
       "operator": "greaterthan",
@@ -21,14 +21,46 @@
       "timeout_seconds": 300,
       "hold_time_seconds": 1800,
       "enabled": true,
-      "include_in_safety": true,
-      "include_in_switch": true,
-      "switch_name": "isCloudy",
-      "switch_timeout_seconds": 300,
-      "switch_hold_time_seconds": 300
+      "include_in_safety": true
+    },
+    "cloud_sensor_2": {
+      "id": "cloud_sensor_2",
+      "name": "Cloud Sensor Secondary",
+      "server_id": "local",
+      "topic": "observatory/cloudsensor2",
+      "json_path": "cloudiness",
+      "threshold": 50.0,
+      "operator": "greaterthan",
+      "safe_when_true": false,
+      "timeout_seconds": 300,
+      "hold_time_seconds": 1800,
+      "enabled": true,
+      "include_in_safety": true
     }
   },
   "alpaca_monitors": {},
+  "switches": {
+    "is_cloudy": {
+      "id": "is_cloudy",
+      "name": "Is Cloudy",
+      "description": "Cloud detection using ANY of the cloud sensors",
+      "sources": ["cloud_sensor_1", "cloud_sensor_2"],
+      "logic": "any",
+      "timeout_seconds": 300,
+      "hold_time_seconds": 300,
+      "enabled": true
+    },
+    "both_cloudy": {
+      "id": "both_cloudy",
+      "name": "Both Cloudy",
+      "description": "Cloud detection only when ALL sensors detect clouds",
+      "sources": ["cloud_sensor_1", "cloud_sensor_2"],
+      "logic": "all",
+      "timeout_seconds": 300,
+      "hold_time_seconds": 60,
+      "enabled": true
+    }
+  },
   "weather_devices": {
     "0": {
       "device_number": 0,

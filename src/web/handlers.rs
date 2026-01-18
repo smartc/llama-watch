@@ -14,6 +14,7 @@ use crate::{
     config::{models::AppConfig, save_config},
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
+    switches::SharedSwitchManager,
     weather::{WeatherMonitorManager, ObservingConditionsDevice, tempest::TempestData},
 };
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ pub type SharedConfig = Arc<RwLock<AppConfig>>;
 pub struct WebState {
     pub config: SharedConfig,
     pub monitor_state: Arc<RwLock<MonitorState>>,
+    pub switch_manager: Option<SharedSwitchManager>,
     pub debug_logger: Arc<DebugLogger>,
     pub safety_monitor: Arc<SafetyMonitor>,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
@@ -61,6 +63,12 @@ pub async fn update_config(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
     }
     drop(monitor_state); // Release lock
+
+    // Reload switches with new configuration
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&new_config);
+    }
 
     // Update in-memory configuration
     *state.config.write().await = new_config;
@@ -155,10 +163,19 @@ pub async fn get_status(
     // Sort monitors alphabetically by name for consistent display order
     statuses.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
+    // Get switch statuses if switch manager is available
+    let switches = if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.get_all_statuses().await
+    } else {
+        Vec::new()
+    };
+
     Json(serde_json::json!({
         "is_safe": is_safe,
         "is_connected": is_connected,
         "monitors": statuses,
+        "switches": switches,
     }))
 }
 
@@ -192,6 +209,13 @@ pub async fn toggle_mqtt_monitor(
     if let Err(e) = monitor_state.reload(&config).await {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
     }
+    drop(monitor_state);
+
+    // Reload switches
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&config);
+    }
 
     Ok(StatusCode::OK)
 }
@@ -220,6 +244,13 @@ pub async fn toggle_alpaca_monitor(
     let mut monitor_state = state.monitor_state.write().await;
     if let Err(e) = monitor_state.reload(&config).await {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+    drop(monitor_state);
+
+    // Reload switches
+    if let Some(ref switch_manager) = state.switch_manager {
+        let mut manager = switch_manager.write().await;
+        manager.reload(&config);
     }
 
     Ok(StatusCode::OK)

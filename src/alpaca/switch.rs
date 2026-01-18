@@ -12,10 +12,10 @@ use tokio::sync::RwLock;
 
 use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, ActionRequest, CommandRequest};
 use crate::config::models::SwitchDeviceConfig;
-use crate::monitors::MonitorState;
+use crate::switches::SharedSwitchManager;
 
 /// ASCOM Alpaca Switch Device
-/// Exposes monitors with include_in_switch=true as read-only boolean switches
+/// Exposes aggregated switches with configurable logic (ANY, ALL, MIN_OF)
 pub struct SwitchDevice {
     pub connected: SyncRwLock<bool>,
     pub server_transaction_id: AtomicU32,
@@ -32,7 +32,7 @@ impl SwitchDevice {
             .clone()
             .unwrap_or_else(|| "LLAMA Switch Device".to_string());
         let description = config.description.clone().unwrap_or_else(|| {
-            "Exposes monitor conditions as read-only switches for automation".to_string()
+            "Aggregated switches with configurable logic for automation".to_string()
         });
         let auto_connect = config.auto_connect;
 
@@ -56,12 +56,11 @@ impl SwitchDevice {
 }
 
 pub type SwitchDeviceState = Arc<SwitchDevice>;
-pub type SharedMonitorState = Arc<RwLock<MonitorState>>;
 
 /// Application state for Switch device handlers
 pub struct SwitchAppState {
     pub switch_device: SwitchDeviceState,
-    pub monitor_state: SharedMonitorState,
+    pub switch_manager: SharedSwitchManager,
 }
 
 pub type SharedSwitchAppState = Arc<SwitchAppState>;
@@ -89,8 +88,8 @@ pub async fn get_maxswitch(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
-    let count = monitor_state.get_switch_count() as i32;
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count() as i32;
 
     Json(AlpacaResponse::success(
         count,
@@ -129,8 +128,8 @@ pub async fn get_canwrite(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
-    let count = monitor_state.get_switch_count();
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
 
     if (switch_id as usize) >= count {
         return Json(AlpacaResponse::<bool>::error(
@@ -153,6 +152,7 @@ pub async fn get_canwrite(
 
 /// GET /api/v1/switch/{device}/getswitch
 /// Returns the state of switch device as boolean
+/// Note: true = triggered (unsafe condition), false = not triggered (safe condition)
 pub async fn get_switch(
     Path((device, switch_id)): Path<(u32, i16)>,
     Query(params): Query<QueryParams>,
@@ -190,13 +190,13 @@ pub async fn get_switch(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
+    let mut switch_manager = state.switch_manager.write().await;
 
-    match monitor_state.get_switch_by_index(switch_id as usize) {
+    match switch_manager.get_switch_by_index(switch_id as usize).await {
         Some(status) => {
-            // Return the switch_is_safe state (uses switch-specific timing)
+            // Return is_triggered state (true = triggered/unsafe condition detected)
             Json(AlpacaResponse::success(
-                status.switch_is_safe,
+                status.is_triggered,
                 params.client_transaction_i_d,
                 server_id,
             ))
@@ -209,7 +209,7 @@ pub async fn get_switch(
             format!(
                 "Switch ID {} out of range (max: {})",
                 switch_id,
-                monitor_state.get_switch_count().saturating_sub(1)
+                switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
         .into_response(),
@@ -245,14 +245,12 @@ pub async fn get_switchname(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
+    let mut switch_manager = state.switch_manager.write().await;
 
-    match monitor_state.get_switch_by_index(switch_id as usize) {
+    match switch_manager.get_switch_by_index(switch_id as usize).await {
         Some(status) => {
-            // Use switch_name if configured, otherwise use monitor name
-            let name = status.switch_name.unwrap_or(status.name);
             Json(AlpacaResponse::success(
-                name,
+                status.name,
                 params.client_transaction_i_d,
                 server_id,
             ))
@@ -265,7 +263,7 @@ pub async fn get_switchname(
             format!(
                 "Switch ID {} out of range (max: {})",
                 switch_id,
-                monitor_state.get_switch_count().saturating_sub(1)
+                switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
         .into_response(),
@@ -301,14 +299,18 @@ pub async fn get_switchdescription(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
+    let mut switch_manager = state.switch_manager.write().await;
 
-    match monitor_state.get_switch_by_index(switch_id as usize) {
+    match switch_manager.get_switch_by_index(switch_id as usize).await {
         Some(status) => {
-            let description = format!(
-                "{} monitor (threshold: {}, hold time: {}s)",
-                status.monitor_type, status.threshold, status.switch_hold_time_seconds
-            );
+            let description = status.description.unwrap_or_else(|| {
+                format!(
+                    "Aggregates {} sources using {} logic (hold time: {}s)",
+                    status.source_states.len(),
+                    status.logic.description(),
+                    status.hold_time_seconds
+                )
+            });
             Json(AlpacaResponse::success(
                 description,
                 params.client_transaction_i_d,
@@ -323,7 +325,7 @@ pub async fn get_switchdescription(
             format!(
                 "Switch ID {} out of range (max: {})",
                 switch_id,
-                monitor_state.get_switch_count().saturating_sub(1)
+                switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
         .into_response(),
@@ -332,6 +334,7 @@ pub async fn get_switchdescription(
 
 /// GET /api/v1/switch/{device}/getswitchvalue
 /// Returns the value of the specified switch device as a double
+/// 1.0 = triggered (unsafe condition), 0.0 = not triggered (safe condition)
 pub async fn get_switchvalue(
     Path((device, switch_id)): Path<(u32, i16)>,
     Query(params): Query<QueryParams>,
@@ -369,12 +372,12 @@ pub async fn get_switchvalue(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
+    let mut switch_manager = state.switch_manager.write().await;
 
-    match monitor_state.get_switch_by_index(switch_id as usize) {
+    match switch_manager.get_switch_by_index(switch_id as usize).await {
         Some(status) => {
-            // Return 1.0 for true, 0.0 for false
-            let value = if status.switch_is_safe { 1.0 } else { 0.0 };
+            // Return 1.0 for triggered, 0.0 for not triggered
+            let value = if status.is_triggered { 1.0 } else { 0.0 };
             Json(AlpacaResponse::success(
                 value,
                 params.client_transaction_i_d,
@@ -389,7 +392,7 @@ pub async fn get_switchvalue(
             format!(
                 "Switch ID {} out of range (max: {})",
                 switch_id,
-                monitor_state.get_switch_count().saturating_sub(1)
+                switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
         .into_response(),
@@ -425,8 +428,8 @@ pub async fn get_minswitchvalue(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
-    let count = monitor_state.get_switch_count();
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
 
     if (switch_id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(
@@ -475,8 +478,8 @@ pub async fn get_maxswitchvalue(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
-    let count = monitor_state.get_switch_count();
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
 
     if (switch_id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(
@@ -525,8 +528,8 @@ pub async fn get_switchstep(
         .into_response();
     }
 
-    let monitor_state = state.monitor_state.read().await;
-    let count = monitor_state.get_switch_count();
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
 
     if (switch_id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(

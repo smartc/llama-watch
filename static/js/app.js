@@ -3,6 +3,7 @@ let config = {
     mqtt_servers: {},
     mqtt_monitors: {},
     alpaca_monitors: {},
+    switches: {},
     switch_device: {
         enabled: true,
         name: null,
@@ -47,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Handle hash navigation (for setup redirects)
     if (window.location.hash) {
         const tabName = window.location.hash.substring(1);
-        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'settings'];
+        const validTabs = ['status', 'mqtt-servers', 'mqtt-monitors', 'alpaca-monitors', 'switches', 'weather-devices', 'settings'];
         if (validTabs.includes(tabName)) {
             switchTab(tabName);
         }
@@ -148,6 +149,9 @@ async function refreshStatus() {
 
         // Update status list
         renderMonitorStatus(status.monitors);
+
+        // Update switch status list
+        renderSwitchStatus(status.switches || []);
     } catch (error) {
         console.error('Failed to refresh status:', error);
     }
@@ -158,6 +162,7 @@ function renderAll() {
     renderMqttServers();
     renderMqttMonitors();
     renderAlpacaMonitors();
+    renderSwitches();
     renderSettings();
     renderSwitchDeviceSettings();
 }
@@ -947,4 +952,339 @@ function showNotification(message, type) {
     setTimeout(() => {
         notification.remove();
     }, 3000);
+}
+
+// ============================================================================
+// Switch Status Display
+// ============================================================================
+
+function renderSwitchStatus(switches) {
+    const container = document.getElementById('switches-status-list');
+    const section = document.getElementById('switches-status-section');
+
+    if (!switches || switches.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+
+    container.innerHTML = switches.map(sw => {
+        const statusClass = sw.enabled ? (sw.is_triggered ? 'unsafe' : 'safe') : 'disabled';
+        const statusText = sw.enabled ? (sw.is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED') : 'DISABLED';
+        const lastUpdate = sw.last_update
+            ? new Date(sw.last_update).toLocaleString()
+            : 'Never';
+
+        // Format logic description
+        let logicText = '';
+        if (sw.logic === 'any') {
+            logicText = 'ANY source triggered (OR)';
+        } else if (sw.logic === 'all') {
+            logicText = 'ALL sources triggered (AND)';
+        } else if (sw.logic && sw.logic.min_of) {
+            logicText = `At least ${sw.logic.min_of.count} of ${sw.source_states.length} sources`;
+        }
+
+        // Calculate pending state info
+        let pendingInfo = '';
+        if (sw.pending_is_triggered !== null && sw.pending_is_triggered !== undefined && sw.pending_since) {
+            const pendingSince = new Date(sw.pending_since);
+            const now = new Date();
+            const elapsedSeconds = Math.floor((now - pendingSince) / 1000);
+            const remainingSeconds = Math.max(0, sw.hold_time_seconds - elapsedSeconds);
+
+            const currentStateText = sw.is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED';
+            const pendingStateText = sw.pending_is_triggered ? 'TRIGGERED' : 'NOT TRIGGERED';
+            const pendingClass = sw.pending_is_triggered ? 'unsafe' : 'safe';
+
+            pendingInfo = `
+                <div class="card-row" style="grid-column: 1 / -1;">
+                    <div style="background-color: #fff3cd; border: 1px solid #ffc107; padding: 8px; border-radius: 4px;">
+                        <strong>⏱ Pending Change:</strong> ${currentStateText} → <span class="${pendingClass}">${pendingStateText}</span>
+                        <br>
+                        <span style="font-size: 0.9em;">Countdown: ${remainingSeconds}s remaining (hold time: ${sw.hold_time_seconds}s)</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format source states
+        const sourcesHtml = sw.source_states.map(source => {
+            const sourceClass = source.is_triggered ? 'unsafe' : 'safe';
+            const sourceIcon = source.is_triggered ? '⚠' : '✓';
+            return `
+                <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+                    <span class="status-indicator ${sourceClass}" style="width: 10px; height: 10px;"></span>
+                    <span>${sourceIcon} ${escapeHtml(source.monitor_name)}</span>
+                    ${source.current_value !== null ? `<span style="color: #666;">(${source.current_value.toFixed(2)})</span>` : ''}
+                    ${source.error ? `<span style="color: #f44336; font-size: 0.85em;">[${escapeHtml(source.error)}]</span>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="card ${statusClass}">
+                <h3>
+                    <span class="status-indicator ${statusClass}"></span>
+                    ${escapeHtml(sw.name)}
+                </h3>
+                <div class="card-grid">
+                    <div class="card-row">
+                        <span class="card-label">Status:</span>
+                        <span class="${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="card-row">
+                        <span class="card-label">Logic:</span>
+                        <span>${logicText}</span>
+                    </div>
+                    ${pendingInfo}
+                    <div class="card-row">
+                        <span class="card-label">Last Update:</span>
+                        <span>${lastUpdate}</span>
+                    </div>
+                    ${sw.hold_time_seconds > 0 ? `
+                    <div class="card-row">
+                        <span class="card-label">Hold Time:</span>
+                        <span>${sw.hold_time_seconds}s</span>
+                    </div>
+                    ` : ''}
+                    ${sw.error ? `
+                    <div class="card-row">
+                        <span class="card-label">Error:</span>
+                        <span style="color: #f44336;">${escapeHtml(sw.error)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="card-row" style="grid-column: 1 / -1;">
+                        <span class="card-label">Sources (${sw.source_states.length}):</span>
+                        <div style="margin-top: 4px;">
+                            ${sourcesHtml}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ============================================================================
+// Switch Configuration
+// ============================================================================
+
+function renderSwitches() {
+    const container = document.getElementById('switches-list');
+    const switches = Object.values(config.switches || {});
+
+    if (switches.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">No switches configured. Create switches to aggregate multiple monitors.</p>';
+        return;
+    }
+
+    container.innerHTML = switches.map(sw => {
+        let logicText = '';
+        if (sw.logic === 'any') {
+            logicText = 'ANY (OR)';
+        } else if (sw.logic === 'all') {
+            logicText = 'ALL (AND)';
+        } else if (sw.logic && sw.logic.min_of) {
+            logicText = `MIN ${sw.logic.min_of.count}`;
+        }
+
+        return `
+            <div class="list-item">
+                <div class="list-item-info">
+                    <strong>${escapeHtml(sw.name)}</strong> (${escapeHtml(sw.id)})<br>
+                    Logic: ${logicText}, Sources: ${sw.sources.length}, Hold: ${sw.hold_time_seconds}s
+                    ${!sw.enabled ? '<span style="color: #999;"> [Disabled]</span>' : ''}
+                </div>
+                <div class="list-item-actions">
+                    <button class="btn btn-primary" onclick="editSwitch('${escapeHtml(sw.id)}')">Edit</button>
+                    <button class="btn btn-danger" onclick="deleteSwitch('${escapeHtml(sw.id)}')">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleSwitchLogicOptions() {
+    const logic = document.getElementById('switch-logic').value;
+    document.getElementById('switch-min-count-group').style.display = logic === 'min_of' ? 'block' : 'none';
+}
+
+function populateSwitchSources() {
+    const container = document.getElementById('switch-sources-container');
+    const mqttMonitors = Object.values(config.mqtt_monitors || {});
+    const alpacaMonitors = Object.values(config.alpaca_monitors || {});
+
+    if (mqttMonitors.length === 0 && alpacaMonitors.length === 0) {
+        container.innerHTML = '<p style="color: #999;">No monitors available. Create MQTT or Alpaca monitors first.</p>';
+        return;
+    }
+
+    let html = '';
+
+    if (mqttMonitors.length > 0) {
+        html += '<div style="margin-bottom: 10px;"><strong>MQTT Monitors:</strong></div>';
+        html += mqttMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="switch-source-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    if (alpacaMonitors.length > 0) {
+        html += '<div style="margin: 10px 0;"><strong>Alpaca Monitors:</strong></div>';
+        html += alpacaMonitors.map(m => `
+            <label style="display: block; margin: 4px 0;">
+                <input type="checkbox" class="switch-source-checkbox" value="${escapeHtml(m.id)}">
+                ${escapeHtml(m.name)} (${escapeHtml(m.id)})
+            </label>
+        `).join('');
+    }
+
+    container.innerHTML = html;
+}
+
+function showAddSwitch() {
+    currentEditId = null;
+    currentEditType = 'switch';
+    document.getElementById('switch-form').style.display = 'block';
+    document.getElementById('switch-form-title').textContent = 'Add Switch';
+    document.getElementById('switch-id').value = '';
+    document.getElementById('switch-id').disabled = false;
+    document.getElementById('switch-name').value = '';
+    document.getElementById('switch-description').value = '';
+    document.getElementById('switch-logic').value = 'any';
+    document.getElementById('switch-min-count').value = '2';
+    document.getElementById('switch-min-count-group').style.display = 'none';
+    document.getElementById('switch-timeout').value = '300';
+    document.getElementById('switch-hold-time').value = '0';
+    document.getElementById('switch-enabled').checked = true;
+
+    // Add event listener for logic dropdown
+    document.getElementById('switch-logic').onchange = toggleSwitchLogicOptions;
+
+    populateSwitchSources();
+}
+
+function editSwitch(id) {
+    const sw = config.switches[id];
+    if (!sw) return;
+
+    currentEditId = id;
+    currentEditType = 'switch';
+    document.getElementById('switch-form').style.display = 'block';
+    document.getElementById('switch-form-title').textContent = 'Edit Switch';
+    document.getElementById('switch-id').value = sw.id;
+    document.getElementById('switch-id').disabled = true;
+    document.getElementById('switch-name').value = sw.name;
+    document.getElementById('switch-description').value = sw.description || '';
+    document.getElementById('switch-timeout').value = sw.timeout_seconds || 300;
+    document.getElementById('switch-hold-time').value = sw.hold_time_seconds || 0;
+    document.getElementById('switch-enabled').checked = sw.enabled !== false;
+
+    // Set logic
+    if (sw.logic === 'any' || sw.logic === 'all') {
+        document.getElementById('switch-logic').value = sw.logic;
+        document.getElementById('switch-min-count-group').style.display = 'none';
+    } else if (sw.logic && sw.logic.min_of) {
+        document.getElementById('switch-logic').value = 'min_of';
+        document.getElementById('switch-min-count').value = sw.logic.min_of.count;
+        document.getElementById('switch-min-count-group').style.display = 'block';
+    }
+
+    // Add event listener for logic dropdown
+    document.getElementById('switch-logic').onchange = toggleSwitchLogicOptions;
+
+    populateSwitchSources();
+
+    // Check the selected sources
+    setTimeout(() => {
+        const checkboxes = document.querySelectorAll('.switch-source-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = sw.sources.includes(cb.value);
+        });
+    }, 0);
+}
+
+function cancelSwitch() {
+    document.getElementById('switch-form').style.display = 'none';
+    currentEditId = null;
+    currentEditType = null;
+}
+
+function saveSwitch() {
+    const id = document.getElementById('switch-id').value.trim();
+    const name = document.getElementById('switch-name').value.trim();
+    const description = document.getElementById('switch-description').value.trim();
+    const logicType = document.getElementById('switch-logic').value;
+    const minCount = parseInt(document.getElementById('switch-min-count').value);
+    const timeout_seconds = parseInt(document.getElementById('switch-timeout').value);
+    const hold_time_seconds = parseInt(document.getElementById('switch-hold-time').value);
+    const enabled = document.getElementById('switch-enabled').checked;
+
+    // Get selected sources
+    const checkboxes = document.querySelectorAll('.switch-source-checkbox:checked');
+    const sources = Array.from(checkboxes).map(cb => cb.value);
+
+    if (!id || !name) {
+        showNotification('Please fill in ID and Name', 'error');
+        return;
+    }
+
+    if (sources.length === 0) {
+        showNotification('Please select at least one source monitor', 'error');
+        return;
+    }
+
+    // Check for duplicate ID when adding new
+    if (!currentEditId && config.switches[id]) {
+        showNotification('Switch ID already exists', 'error');
+        return;
+    }
+
+    // Build logic object
+    let logic;
+    if (logicType === 'any' || logicType === 'all') {
+        logic = logicType;
+    } else if (logicType === 'min_of') {
+        if (minCount < 1 || minCount > sources.length) {
+            showNotification(`Minimum count must be between 1 and ${sources.length}`, 'error');
+            return;
+        }
+        logic = { min_of: { count: minCount } };
+    }
+
+    config.switches = config.switches || {};
+    config.switches[id] = {
+        id,
+        name,
+        description: description || null,
+        sources,
+        logic,
+        timeout_seconds,
+        hold_time_seconds,
+        enabled
+    };
+
+    saveConfig().then(success => {
+        if (success) {
+            cancelSwitch();
+            renderSwitches();
+            showNotification('Switch saved. Click Reload to apply changes.', 'success');
+        }
+    });
+}
+
+function deleteSwitch(id) {
+    if (!confirm(`Delete switch '${id}'?`)) return;
+
+    delete config.switches[id];
+    saveConfig().then(success => {
+        if (success) {
+            renderSwitches();
+            showNotification('Switch deleted. Click Reload to apply changes.', 'success');
+        }
+    });
 }
