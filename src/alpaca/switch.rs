@@ -8,9 +8,8 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
 };
-use tokio::sync::RwLock;
 
-use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, ActionRequest, CommandRequest};
+use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, SwitchQueryParams, ActionRequest, CommandRequest};
 use crate::config::models::SwitchDeviceConfig;
 use crate::switches::SharedSwitchManager;
 
@@ -99,11 +98,11 @@ pub async fn get_maxswitch(
     .into_response()
 }
 
-/// GET /api/v1/switch/{device}/canwrite
+/// GET /api/v1/switch/{device}/canwrite?Id=n
 /// Returns true if the specified switch can be written (always false for us - read-only)
 pub async fn get_canwrite(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -118,7 +117,7 @@ pub async fn get_canwrite(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<bool>::error(
             params.client_transaction_i_d,
             server_id,
@@ -131,12 +130,12 @@ pub async fn get_canwrite(
     let switch_manager = state.switch_manager.read().await;
     let count = switch_manager.get_switch_count();
 
-    if (switch_id as usize) >= count {
+    if (params.id as usize) >= count {
         return Json(AlpacaResponse::<bool>::error(
             params.client_transaction_i_d,
             server_id,
             0x401,
-            format!("Switch ID {} out of range (max: {})", switch_id, count.saturating_sub(1)),
+            format!("Switch ID {} out of range (max: {})", params.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -150,12 +149,12 @@ pub async fn get_canwrite(
     .into_response()
 }
 
-/// GET /api/v1/switch/{device}/getswitch
+/// GET /api/v1/switch/{device}/getswitch?Id=n
 /// Returns the state of switch device as boolean
 /// Note: true = triggered (unsafe condition), false = not triggered (safe condition)
 pub async fn get_switch(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -180,7 +179,7 @@ pub async fn get_switch(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<bool>::error(
             params.client_transaction_i_d,
             server_id,
@@ -192,7 +191,7 @@ pub async fn get_switch(
 
     let mut switch_manager = state.switch_manager.write().await;
 
-    match switch_manager.get_switch_by_index(switch_id as usize).await {
+    match switch_manager.get_switch_by_index(params.id as usize).await {
         Some(status) => {
             // Return is_triggered state (true = triggered/unsafe condition detected)
             Json(AlpacaResponse::success(
@@ -208,7 +207,7 @@ pub async fn get_switch(
             0x401,
             format!(
                 "Switch ID {} out of range (max: {})",
-                switch_id,
+                params.id,
                 switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
@@ -216,11 +215,11 @@ pub async fn get_switch(
     }
 }
 
-/// GET /api/v1/switch/{device}/getswitchname
+/// GET /api/v1/switch/{device}/getswitchname?Id=n
 /// Returns the name of the specified switch device
 pub async fn get_switchname(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -235,7 +234,7 @@ pub async fn get_switchname(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<String>::error(
             params.client_transaction_i_d,
             server_id,
@@ -247,7 +246,7 @@ pub async fn get_switchname(
 
     let mut switch_manager = state.switch_manager.write().await;
 
-    match switch_manager.get_switch_by_index(switch_id as usize).await {
+    match switch_manager.get_switch_by_index(params.id as usize).await {
         Some(status) => {
             Json(AlpacaResponse::success(
                 status.name,
@@ -262,7 +261,7 @@ pub async fn get_switchname(
             0x401,
             format!(
                 "Switch ID {} out of range (max: {})",
-                switch_id,
+                params.id,
                 switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
@@ -270,11 +269,11 @@ pub async fn get_switchname(
     }
 }
 
-/// GET /api/v1/switch/{device}/getswitchdescription
+/// GET /api/v1/switch/{device}/getswitchdescription?Id=n
 /// Returns the description of the specified switch device
 pub async fn get_switchdescription(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -289,7 +288,7 @@ pub async fn get_switchdescription(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<String>::error(
             params.client_transaction_i_d,
             server_id,
@@ -301,7 +300,7 @@ pub async fn get_switchdescription(
 
     let mut switch_manager = state.switch_manager.write().await;
 
-    match switch_manager.get_switch_by_index(switch_id as usize).await {
+    match switch_manager.get_switch_by_index(params.id as usize).await {
         Some(status) => {
             let description = status.description.unwrap_or_else(|| {
                 format!(
@@ -324,7 +323,7 @@ pub async fn get_switchdescription(
             0x401,
             format!(
                 "Switch ID {} out of range (max: {})",
-                switch_id,
+                params.id,
                 switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
@@ -332,12 +331,12 @@ pub async fn get_switchdescription(
     }
 }
 
-/// GET /api/v1/switch/{device}/getswitchvalue
+/// GET /api/v1/switch/{device}/getswitchvalue?Id=n
 /// Returns the value of the specified switch device as a double
 /// 1.0 = triggered (unsafe condition), 0.0 = not triggered (safe condition)
 pub async fn get_switchvalue(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -362,7 +361,7 @@ pub async fn get_switchvalue(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
@@ -374,7 +373,7 @@ pub async fn get_switchvalue(
 
     let mut switch_manager = state.switch_manager.write().await;
 
-    match switch_manager.get_switch_by_index(switch_id as usize).await {
+    match switch_manager.get_switch_by_index(params.id as usize).await {
         Some(status) => {
             // Return 1.0 for triggered, 0.0 for not triggered
             let value = if status.is_triggered { 1.0 } else { 0.0 };
@@ -391,7 +390,7 @@ pub async fn get_switchvalue(
             0x401,
             format!(
                 "Switch ID {} out of range (max: {})",
-                switch_id,
+                params.id,
                 switch_manager.get_switch_count().saturating_sub(1)
             ),
         ))
@@ -399,11 +398,11 @@ pub async fn get_switchvalue(
     }
 }
 
-/// GET /api/v1/switch/{device}/minswitchvalue
+/// GET /api/v1/switch/{device}/minswitchvalue?Id=n
 /// Returns the minimum value of the specified switch device (always 0.0 for boolean)
 pub async fn get_minswitchvalue(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -418,7 +417,7 @@ pub async fn get_minswitchvalue(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
@@ -431,12 +430,12 @@ pub async fn get_minswitchvalue(
     let switch_manager = state.switch_manager.read().await;
     let count = switch_manager.get_switch_count();
 
-    if (switch_id as usize) >= count {
+    if (params.id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
             0x401,
-            format!("Switch ID {} out of range (max: {})", switch_id, count.saturating_sub(1)),
+            format!("Switch ID {} out of range (max: {})", params.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -449,11 +448,11 @@ pub async fn get_minswitchvalue(
     .into_response()
 }
 
-/// GET /api/v1/switch/{device}/maxswitchvalue
+/// GET /api/v1/switch/{device}/maxswitchvalue?Id=n
 /// Returns the maximum value of the specified switch device (always 1.0 for boolean)
 pub async fn get_maxswitchvalue(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -468,7 +467,7 @@ pub async fn get_maxswitchvalue(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
@@ -481,12 +480,12 @@ pub async fn get_maxswitchvalue(
     let switch_manager = state.switch_manager.read().await;
     let count = switch_manager.get_switch_count();
 
-    if (switch_id as usize) >= count {
+    if (params.id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
             0x401,
-            format!("Switch ID {} out of range (max: {})", switch_id, count.saturating_sub(1)),
+            format!("Switch ID {} out of range (max: {})", params.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -499,11 +498,11 @@ pub async fn get_maxswitchvalue(
     .into_response()
 }
 
-/// GET /api/v1/switch/{device}/switchstep
+/// GET /api/v1/switch/{device}/switchstep?Id=n
 /// Returns the step size for the specified switch device (always 1.0 for boolean)
 pub async fn get_switchstep(
-    Path((device, switch_id)): Path<(u32, i16)>,
-    Query(params): Query<QueryParams>,
+    Path(device): Path<u32>,
+    Query(params): Query<SwitchQueryParams>,
     State(state): State<SharedSwitchAppState>,
 ) -> Response {
     let server_id = state.switch_device.next_transaction_id();
@@ -518,7 +517,7 @@ pub async fn get_switchstep(
         .into_response();
     }
 
-    if switch_id < 0 {
+    if params.id < 0 {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
@@ -531,12 +530,12 @@ pub async fn get_switchstep(
     let switch_manager = state.switch_manager.read().await;
     let count = switch_manager.get_switch_count();
 
-    if (switch_id as usize) >= count {
+    if (params.id as usize) >= count {
         return Json(AlpacaResponse::<f64>::error(
             params.client_transaction_i_d,
             server_id,
             0x401,
-            format!("Switch ID {} out of range (max: {})", switch_id, count.saturating_sub(1)),
+            format!("Switch ID {} out of range (max: {})", params.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -562,6 +561,9 @@ pub struct SetSwitchRequest {
     #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
+    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(rename = "Id")]
+    pub id: i16,
     #[serde(alias = "State", alias = "state")]
     #[serde(rename = "State")]
     pub state: String,
@@ -576,6 +578,9 @@ pub struct SetSwitchValueRequest {
     #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
+    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(rename = "Id")]
+    pub id: i16,
     #[serde(alias = "Value", alias = "value")]
     #[serde(rename = "Value")]
     pub value: f64,
@@ -590,6 +595,9 @@ pub struct SetSwitchNameRequest {
     #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid")]
     #[serde(rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
+    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(rename = "Id")]
+    pub id: i16,
     #[serde(alias = "Name", alias = "name")]
     #[serde(rename = "Name")]
     pub name: String,
@@ -597,7 +605,7 @@ pub struct SetSwitchNameRequest {
 
 /// PUT /api/v1/switch/{device}/setswitch
 pub async fn put_setswitch(
-    Path((device, _switch_id)): Path<(u32, i16)>,
+    Path(device): Path<u32>,
     State(state): State<SharedSwitchAppState>,
     AlpacaForm(request): AlpacaForm<SetSwitchRequest>,
 ) -> Response {
@@ -609,6 +617,30 @@ pub async fn put_setswitch(
             server_id,
             0x400,
             "Invalid device number".to_string(),
+        ))
+        .into_response();
+    }
+
+    // Validate switch ID
+    if request.id < 0 {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            "Invalid switch ID".to_string(),
+        ))
+        .into_response();
+    }
+
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
+
+    if (request.id as usize) >= count {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            format!("Switch ID {} out of range (max: {})", request.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -625,7 +657,7 @@ pub async fn put_setswitch(
 
 /// PUT /api/v1/switch/{device}/setswitchvalue
 pub async fn put_setswitchvalue(
-    Path((device, _switch_id)): Path<(u32, i16)>,
+    Path(device): Path<u32>,
     State(state): State<SharedSwitchAppState>,
     AlpacaForm(request): AlpacaForm<SetSwitchValueRequest>,
 ) -> Response {
@@ -637,6 +669,30 @@ pub async fn put_setswitchvalue(
             server_id,
             0x400,
             "Invalid device number".to_string(),
+        ))
+        .into_response();
+    }
+
+    // Validate switch ID
+    if request.id < 0 {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            "Invalid switch ID".to_string(),
+        ))
+        .into_response();
+    }
+
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
+
+    if (request.id as usize) >= count {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            format!("Switch ID {} out of range (max: {})", request.id, count.saturating_sub(1)),
         ))
         .into_response();
     }
@@ -653,7 +709,7 @@ pub async fn put_setswitchvalue(
 
 /// PUT /api/v1/switch/{device}/setswitchname
 pub async fn put_setswitchname(
-    Path((device, _switch_id)): Path<(u32, i16)>,
+    Path(device): Path<u32>,
     State(state): State<SharedSwitchAppState>,
     AlpacaForm(request): AlpacaForm<SetSwitchNameRequest>,
 ) -> Response {
@@ -665,6 +721,30 @@ pub async fn put_setswitchname(
             server_id,
             0x400,
             "Invalid device number".to_string(),
+        ))
+        .into_response();
+    }
+
+    // Validate switch ID
+    if request.id < 0 {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            "Invalid switch ID".to_string(),
+        ))
+        .into_response();
+    }
+
+    let switch_manager = state.switch_manager.read().await;
+    let count = switch_manager.get_switch_count();
+
+    if (request.id as usize) >= count {
+        return Json(AlpacaResponse::<()>::error(
+            request.client_transaction_i_d,
+            server_id,
+            0x401,
+            format!("Switch ID {} out of range (max: {})", request.id, count.saturating_sub(1)),
         ))
         .into_response();
     }

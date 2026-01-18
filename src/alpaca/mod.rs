@@ -224,49 +224,50 @@ pub fn create_switch_router(state: SharedSwitchAppState) -> Router {
             "/api/v1/switch/:device/maxswitch",
             get(switch::get_maxswitch),
         )
+        // Switch methods that take Id as query parameter
         .route(
-            "/api/v1/switch/:device/:switch_id/canwrite",
+            "/api/v1/switch/:device/canwrite",
             get(switch::get_canwrite),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/getswitch",
+            "/api/v1/switch/:device/getswitch",
             get(switch::get_switch),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/getswitchname",
+            "/api/v1/switch/:device/getswitchname",
             get(switch::get_switchname),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/getswitchdescription",
+            "/api/v1/switch/:device/getswitchdescription",
             get(switch::get_switchdescription),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/getswitchvalue",
+            "/api/v1/switch/:device/getswitchvalue",
             get(switch::get_switchvalue),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/minswitchvalue",
+            "/api/v1/switch/:device/minswitchvalue",
             get(switch::get_minswitchvalue),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/maxswitchvalue",
+            "/api/v1/switch/:device/maxswitchvalue",
             get(switch::get_maxswitchvalue),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/switchstep",
+            "/api/v1/switch/:device/switchstep",
             get(switch::get_switchstep),
         )
         // Write operations (all read-only, return errors)
         .route(
-            "/api/v1/switch/:device/:switch_id/setswitch",
+            "/api/v1/switch/:device/setswitch",
             put(switch::put_setswitch),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/setswitchvalue",
+            "/api/v1/switch/:device/setswitchvalue",
             put(switch::put_setswitchvalue),
         )
         .route(
-            "/api/v1/switch/:device/:switch_id/setswitchname",
+            "/api/v1/switch/:device/setswitchname",
             put(switch::put_setswitchname),
         )
         // Common properties

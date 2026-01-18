@@ -149,6 +149,20 @@ pub struct QueryParams {
     pub client_transaction_i_d: u32,
 }
 
+/// Query parameters for switch methods that require an Id parameter
+#[derive(Debug, Deserialize)]
+pub struct SwitchQueryParams {
+    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
+    #[serde(rename = "ClientID")]
+    pub client_i_d: u32,
+    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
+    #[serde(rename = "ClientTransactionID")]
+    pub client_transaction_i_d: u32,
+    #[serde(alias = "ID", alias = "id", alias = "Id")]
+    #[serde(rename = "Id")]
+    pub id: i16,
+}
+
 /// PUT request for Action method
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
