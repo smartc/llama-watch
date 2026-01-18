@@ -53,13 +53,16 @@
                     </div>
                 </div>
                 <div class="section">
-                    <h2>Monitor Status</h2>
+                    <h2>Individual Monitor Status</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                        Monitors shown here are evaluated individually - any unsafe = system unsafe.
+                    </p>
                     <div id="monitor-status-list"></div>
                 </div>
                 <div class="section" id="groups-status-section" style="display: none;">
-                    <h2>Monitor Group Status</h2>
+                    <h2>Grouped Monitor Status</h2>
                     <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
-                        Groups combine multiple monitors with custom logic (ANY, ALL, or MIN_OF).
+                        Groups combine multiple monitors with custom logic. Grouped monitors are only evaluated via their group's logic, not individually.
                     </p>
                     <div id="groups-status-list"></div>
                 </div>

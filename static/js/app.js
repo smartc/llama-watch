@@ -151,11 +151,11 @@ async function refreshStatus() {
         // Update status list
         renderMonitorStatus(status.monitors);
 
-        // Fetch and render group status
+        // Fetch and render group status (pass full monitor data for detailed display)
         try {
             const groupsResponse = await fetch('/api/groups/status');
             const groupStatuses = await groupsResponse.json();
-            renderGroupStatus(groupStatuses);
+            renderGroupStatus(groupStatuses, status.monitors);
         } catch (err) {
             console.warn('Failed to fetch group status:', err);
         }
@@ -268,7 +268,25 @@ function renderMonitorStatus(monitors) {
         return;
     }
 
-    container.innerHTML = monitors.map(monitor => {
+    // Get all monitor IDs that are in groups
+    const groupedMonitorIds = new Set();
+    if (config.monitor_groups) {
+        Object.values(config.monitor_groups).forEach(group => {
+            if (group.enabled && group.members) {
+                group.members.forEach(id => groupedMonitorIds.add(id));
+            }
+        });
+    }
+
+    // Filter out grouped monitors - they'll be shown in the Groups section
+    const ungroupedMonitors = monitors.filter(m => !groupedMonitorIds.has(m.id));
+
+    if (ungroupedMonitors.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #999;">All monitors are in groups (see Monitor Group Status below)</p>';
+        return;
+    }
+
+    container.innerHTML = ungroupedMonitors.map(monitor => {
         const statusClass = monitor.enabled ? (monitor.is_safe ? 'safe' : 'unsafe') : 'disabled';
         const statusText = monitor.enabled ? (monitor.is_safe ? 'SAFE' : 'UNSAFE') : 'DISABLED';
         const lastUpdate = monitor.last_update
@@ -1110,7 +1128,7 @@ function renderSwitchStatus(switches) {
 }
 
 // Render group status
-function renderGroupStatus(groups) {
+function renderGroupStatus(groups, allMonitors) {
     const container = document.getElementById('groups-status-list');
     const section = document.getElementById('groups-status-section');
 
@@ -1120,6 +1138,12 @@ function renderGroupStatus(groups) {
     }
 
     section.style.display = 'block';
+
+    // Build a map of monitor id -> full monitor data for detailed display
+    const monitorMap = {};
+    if (allMonitors) {
+        allMonitors.forEach(m => monitorMap[m.id] = m);
+    }
 
     container.innerHTML = groups.map(group => {
         const statusClass = group.enabled ? (group.is_safe ? 'safe' : 'unsafe') : 'disabled';
@@ -1135,14 +1159,32 @@ function renderGroupStatus(groups) {
             logicText = `Unsafe if at least ${group.logic.min_of.count} of ${group.member_statuses.length} members unsafe`;
         }
 
-        // Format member states
+        // Format member states with full details
         const membersHtml = group.member_statuses.map(member => {
             const memberClass = member.is_safe ? 'safe' : 'unsafe';
             const memberIcon = member.is_safe ? '✓' : '⚠';
+
+            // Get full monitor data if available
+            const fullMonitor = monitorMap[member.id];
+            let valueInfo = '';
+            let lastUpdateInfo = '';
+
+            if (fullMonitor) {
+                if (fullMonitor.current_value !== null && fullMonitor.current_value !== undefined) {
+                    valueInfo = `<span style="color: #666;">(${fullMonitor.current_value.toFixed(2)} vs ${fullMonitor.threshold})</span>`;
+                }
+                if (fullMonitor.last_update) {
+                    const lastUpdate = new Date(fullMonitor.last_update);
+                    const ago = Math.floor((Date.now() - lastUpdate.getTime()) / 1000);
+                    lastUpdateInfo = `<span style="color: #888; font-size: 0.8em;">${ago}s ago</span>`;
+                }
+            }
+
             return `
-                <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0;">
-                    <span class="status-indicator ${memberClass}" style="width: 10px; height: 10px;"></span>
-                    <span>${memberIcon} ${escapeHtml(member.name)}</span>
+                <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee;">
+                    <span class="status-indicator ${memberClass}" style="width: 12px; height: 12px;"></span>
+                    <span style="flex: 1;">${memberIcon} ${escapeHtml(member.name)} ${valueInfo}</span>
+                    ${lastUpdateInfo}
                     ${member.error ? `<span style="color: #f44336; font-size: 0.85em;">[${escapeHtml(member.error)}]</span>` : ''}
                 </div>
             `;
