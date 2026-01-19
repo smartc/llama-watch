@@ -1168,6 +1168,8 @@ function renderGroupStatus(groups, allMonitors) {
             const fullMonitor = monitorMap[member.id];
             let valueInfo = '';
             let lastUpdateInfo = '';
+            let toggleHtml = '';
+            let monitorType = '';
 
             if (fullMonitor) {
                 if (fullMonitor.current_value !== null && fullMonitor.current_value !== undefined) {
@@ -1178,6 +1180,13 @@ function renderGroupStatus(groups, allMonitors) {
                     const ago = Math.floor((Date.now() - lastUpdate.getTime()) / 1000);
                     lastUpdateInfo = `<span style="color: #888; font-size: 0.8em;">${ago}s ago</span>`;
                 }
+                monitorType = fullMonitor.monitor_type || '';
+                toggleHtml = `
+                    <label class="monitor-toggle" style="margin-left: 8px; font-size: 0.85em;">
+                        <input type="checkbox" ${fullMonitor.enabled ? 'checked' : ''} onchange="toggleMonitor('${member.id}', '${monitorType}', this.checked)">
+                        <span>${fullMonitor.enabled ? 'On' : 'Off'}</span>
+                    </label>
+                `;
             }
 
             return `
@@ -1185,6 +1194,7 @@ function renderGroupStatus(groups, allMonitors) {
                     <span class="status-indicator ${memberClass}" style="width: 12px; height: 12px;"></span>
                     <span style="flex: 1;">${memberIcon} ${escapeHtml(member.name)} ${valueInfo}</span>
                     ${lastUpdateInfo}
+                    ${toggleHtml}
                     ${member.error ? `<span style="color: #f44336; font-size: 0.85em;">[${escapeHtml(member.error)}]</span>` : ''}
                 </div>
             `;
