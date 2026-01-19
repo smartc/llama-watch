@@ -321,10 +321,16 @@ function renderMonitorStatus(monitors) {
                 <h3>
                     <span class="status-indicator ${statusClass}"></span>
                     ${monitor.name} (${monitor.monitor_type})
-                    <label class="monitor-toggle" style="float: right;">
-                        <input type="checkbox" ${monitor.enabled ? 'checked' : ''} onchange="toggleMonitor('${monitor.id}', '${monitor.monitor_type}', this.checked)">
-                        <span>Enabled</span>
-                    </label>
+                    <span style="float: right;">
+                        <label class="monitor-toggle" title="Enable/disable monitor (stops data collection when off)">
+                            <input type="checkbox" ${monitor.enabled ? 'checked' : ''} onchange="toggleMonitor('${monitor.id}', '${monitor.monitor_type}', this.checked)">
+                            <span>Run</span>
+                        </label>
+                        <label class="monitor-toggle" style="margin-left: 8px;" title="Include in safety calculation (can still be used by switches when off)">
+                            <input type="checkbox" ${monitor.include_in_safety ? 'checked' : ''} onchange="toggleMonitorSafety('${monitor.id}', '${monitor.monitor_type}', this.checked)">
+                            <span>Safety</span>
+                        </label>
+                    </span>
                 </h3>
                 <div class="card-grid">
                     <div class="card-row">
@@ -391,6 +397,33 @@ async function toggleMonitor(id, monitorType, enabled) {
         }
     } catch (error) {
         showNotification('Failed to toggle monitor', 'error');
+        console.error(error);
+    }
+}
+
+// Toggle monitor include_in_safety (separate from enabled)
+async function toggleMonitorSafety(id, monitorType, includeInSafety) {
+    const endpoint = monitorType === 'MQTT'
+        ? `/api/monitors/mqtt/${id}/toggle-safety`
+        : `/api/monitors/alpaca/${id}/toggle-safety`;
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ include_in_safety: includeInSafety })
+        });
+
+        if (response.ok) {
+            showNotification(`Monitor safety inclusion ${includeInSafety ? 'enabled' : 'disabled'}`, 'success');
+            await loadConfig();  // Reload config to update UI
+            await refreshStatus(); // Refresh status immediately
+        } else {
+            const error = await response.text();
+            showNotification(`Failed to toggle safety inclusion: ${error}`, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to toggle safety inclusion', 'error');
         console.error(error);
     }
 }
@@ -1181,10 +1214,15 @@ function renderGroupStatus(groups, allMonitors) {
                     lastUpdateInfo = `<span style="color: #888; font-size: 0.8em;">${ago}s ago</span>`;
                 }
                 monitorType = fullMonitor.monitor_type || '';
+                // Two toggles: Enabled (monitor runs) and Safety (contributes to safety)
                 toggleHtml = `
-                    <label class="monitor-toggle" style="margin-left: 8px; font-size: 0.85em;">
+                    <label class="monitor-toggle" style="margin-left: 8px; font-size: 0.85em;" title="Enable/disable monitor (stops data collection when off)">
                         <input type="checkbox" ${fullMonitor.enabled ? 'checked' : ''} onchange="toggleMonitor('${member.id}', '${monitorType}', this.checked)">
-                        <span>${fullMonitor.enabled ? 'On' : 'Off'}</span>
+                        <span>Run</span>
+                    </label>
+                    <label class="monitor-toggle" style="margin-left: 8px; font-size: 0.85em;" title="Include in safety calculation (can still be used by switches when off)">
+                        <input type="checkbox" ${fullMonitor.include_in_safety ? 'checked' : ''} onchange="toggleMonitorSafety('${member.id}', '${monitorType}', this.checked)">
+                        <span>Safety</span>
                     </label>
                 `;
             }

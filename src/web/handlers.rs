@@ -164,6 +164,11 @@ pub struct ToggleEnabledRequest {
     enabled: bool,
 }
 
+#[derive(Deserialize)]
+pub struct ToggleSafetyRequest {
+    include_in_safety: bool,
+}
+
 // POST /api/monitors/mqtt/:id/toggle - Toggle MQTT monitor enabled state
 pub async fn toggle_mqtt_monitor(
     Path(id): Path<String>,
@@ -231,6 +236,64 @@ pub async fn toggle_alpaca_monitor(
     if let Some(ref switch_manager) = state.switch_manager {
         let mut manager = switch_manager.write().await;
         manager.reload(&config);
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// POST /api/monitors/mqtt/:id/toggle-safety - Toggle MQTT monitor include_in_safety state
+pub async fn toggle_mqtt_monitor_safety(
+    Path(id): Path<String>,
+    State(state): State<SharedWebState>,
+    Json(req): Json<ToggleSafetyRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Find and update the monitor
+    if let Some(monitor) = config.mqtt_monitors.get_mut(&id) {
+        monitor.include_in_safety = req.include_in_safety;
+    } else {
+        return Err((StatusCode::NOT_FOUND, format!("Monitor '{}' not found", id)));
+    }
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Reload monitors to pick up changed include_in_safety
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// POST /api/monitors/alpaca/:id/toggle-safety - Toggle Alpaca monitor include_in_safety state
+pub async fn toggle_alpaca_monitor_safety(
+    Path(id): Path<String>,
+    State(state): State<SharedWebState>,
+    Json(req): Json<ToggleSafetyRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let mut config = state.config.write().await;
+
+    // Find and update the monitor
+    if let Some(monitor) = config.alpaca_monitors.get_mut(&id) {
+        monitor.include_in_safety = req.include_in_safety;
+    } else {
+        return Err((StatusCode::NOT_FOUND, format!("Monitor '{}' not found", id)));
+    }
+
+    // Save configuration
+    if let Err(e) = save_config(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Reload monitors to pick up changed include_in_safety
+    let mut monitor_state = state.monitor_state.write().await;
+    if let Err(e) = monitor_state.reload(&config).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload monitors: {}", e)));
     }
 
     Ok(StatusCode::OK)

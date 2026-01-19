@@ -12,7 +12,9 @@ pub fn create_router(state: SharedWebState) -> Router {
         .route("/api/config", get(handlers::get_config).post(handlers::update_config))
         .route("/api/status", get(handlers::get_status))
         .route("/api/monitors/mqtt/:id/toggle", post(handlers::toggle_mqtt_monitor))
+        .route("/api/monitors/mqtt/:id/toggle-safety", post(handlers::toggle_mqtt_monitor_safety))
         .route("/api/monitors/alpaca/:id/toggle", post(handlers::toggle_alpaca_monitor))
+        .route("/api/monitors/alpaca/:id/toggle-safety", post(handlers::toggle_alpaca_monitor_safety))
         // Logging endpoints
         .route("/api/logging/status", get(handlers::get_logging_status))
         .route("/api/logging/toggle", post(handlers::toggle_logging))
