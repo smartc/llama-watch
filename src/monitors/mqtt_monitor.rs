@@ -54,14 +54,19 @@ impl MqttMonitor {
         if let (Some(pending_safe), Some(pending_since)) = (status.pending_is_safe, status.pending_since) {
             let elapsed = now.signed_duration_since(pending_since);
             if elapsed.num_seconds() as u64 >= self.config.hold_time_seconds {
-                // Hold time has elapsed, commit the pending state
+                // Hold time has elapsed - but re-check the underlying status before committing
+                // to avoid a TOCTOU race where the message loop may have already cleared or
+                // changed the pending state between our read (clone) and this write.
                 let mut s = self.status.write();
-                s.is_safe = pending_safe;
-                s.pending_is_safe = None;
-                s.pending_since = None;
-                status.is_safe = pending_safe;
-                status.pending_is_safe = None;
-                status.pending_since = None;
+                if s.pending_is_safe == Some(pending_safe) && s.pending_since == Some(pending_since) {
+                    s.is_safe = pending_safe;
+                    s.pending_is_safe = None;
+                    s.pending_since = None;
+                }
+                // Always reflect the current underlying state, not the stale clone
+                status.is_safe = s.is_safe;
+                status.pending_is_safe = s.pending_is_safe;
+                status.pending_since = s.pending_since;
             }
         }
 
