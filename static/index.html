@@ -35,8 +35,10 @@
                 <button class="tab" onclick="switchTab('mqtt-servers')">MQTT Servers</button>
                 <button class="tab" onclick="switchTab('mqtt-monitors')">MQTT Monitors</button>
                 <button class="tab" onclick="switchTab('alpaca-monitors')">Alpaca Monitors</button>
+                <button class="tab" onclick="switchTab('monitor-groups')">Groups</button>
                 <button class="tab" onclick="switchTab('switches')">Switches</button>
                 <button class="tab" onclick="switchTab('weather-devices')">Weather Devices</button>
+                <button class="tab" onclick="switchTab('discovery')">Discovery</button>
                 <button class="tab" onclick="switchTab('settings')">Settings</button>
             </div>
 
@@ -51,8 +53,18 @@
                     </div>
                 </div>
                 <div class="section">
-                    <h2>Monitor Status</h2>
+                    <h2>Individual Monitor Status</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                        Monitors shown here are evaluated individually - any unsafe = system unsafe.
+                    </p>
                     <div id="monitor-status-list"></div>
+                </div>
+                <div class="section" id="groups-status-section" style="display: none;">
+                    <h2>Grouped Monitor Status</h2>
+                    <p style="color: #666; font-size: 0.9em; margin-bottom: 15px;">
+                        Groups combine multiple monitors with custom logic. Grouped monitors are only evaluated via their group's logic, not individually.
+                    </p>
+                    <div id="groups-status-list"></div>
                 </div>
                 <div class="section" id="switches-status-section" style="display: none;">
                     <h2>Switch Status</h2>
@@ -166,8 +178,8 @@
                     </div>
                     <div class="form-group">
                         <label>Timeout (seconds)</label>
-                        <input type="number" id="mqtt-monitor-timeout" value="300" min="0">
-                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds, 0 to disable)</div>
+                        <input type="number" id="mqtt-monitor-timeout" value="300">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300s, 0 to disable, negative to ignore completely)</div>
                     </div>
                     <div class="form-group">
                         <label>Hold Time (seconds)</label>
@@ -260,8 +272,8 @@
                     </div>
                     <div class="form-group">
                         <label>Timeout (seconds)</label>
-                        <input type="number" id="alpaca-monitor-timeout" value="300" min="0">
-                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300 seconds, 0 to disable)</div>
+                        <input type="number" id="alpaca-monitor-timeout" value="300">
+                        <div class="info-text">Mark monitor as unsafe if no data received within this period (default: 300s, 0 to disable, negative to ignore completely)</div>
                     </div>
                     <div class="form-group">
                         <label>Hold Time (seconds)</label>
@@ -629,6 +641,109 @@
 
                     <button class="btn btn-success" onclick="saveWeatherDevice()">Save</button>
                     <button class="btn btn-secondary" onclick="cancelWeatherDevice()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Monitor Groups Tab -->
+            <div id="tab-monitor-groups" class="tab-content">
+                <div class="section">
+                    <h2>Monitor Groups</h2>
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Group monitors together with configurable safety logic. Use ANY, ALL, or MIN_OF logic to control when a group reports unsafe.
+                        For example, with ALL logic, the group only reports unsafe when ALL members are unsafe.
+                    </p>
+                    <button class="btn btn-primary" onclick="showAddMonitorGroup()">Add Monitor Group</button>
+                    <div id="monitor-groups-list" class="list-container"></div>
+                </div>
+
+                <div id="monitor-group-form" class="section" style="display: none;">
+                    <h2 id="monitor-group-form-title">Add Monitor Group</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Group ID *</label>
+                            <input type="text" id="group-id" placeholder="e.g., cloud-sensors">
+                            <div class="info-text">Unique identifier for this group</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Group Name *</label>
+                            <input type="text" id="group-name" placeholder="e.g., Cloud Sensors">
+                            <div class="info-text">Display name for this group</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" id="group-description" placeholder="e.g., Both cloud sensors must agree before reporting unsafe">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Logic *</label>
+                            <select id="group-logic" onchange="toggleGroupLogicOptions()">
+                                <option value="any">ANY - Unsafe if ANY member is unsafe (default)</option>
+                                <option value="all">ALL - Unsafe only if ALL members are unsafe</option>
+                                <option value="min_of">MIN OF - Unsafe if at least N members are unsafe</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="group-min-count-group" style="display: none;">
+                            <label>Minimum Count *</label>
+                            <input type="number" id="group-min-count" value="2" min="1">
+                            <div class="info-text">Number of members that must be unsafe</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Member Monitors *</label>
+                        <div id="group-members-container" class="sources-container">
+                            <!-- Checkboxes will be populated dynamically -->
+                        </div>
+                        <div class="info-text">Select monitors to include in this group</div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="group-enabled" checked>
+                            Enabled
+                        </label>
+                    </div>
+                    <button class="btn btn-success" onclick="saveMonitorGroup()">Save</button>
+                    <button class="btn btn-secondary" onclick="cancelMonitorGroup()">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Discovery Tab -->
+            <div id="tab-discovery" class="tab-content">
+                <div class="section">
+                    <h2>Alpaca Device Discovery</h2>
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Scan your network to find ASCOM Alpaca devices that can be added as monitors.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <button class="btn btn-primary" onclick="scanForDevices()">Scan Network</button>
+                            <span id="discovery-status" style="margin-left: 10px; color: #666;"></span>
+                        </div>
+                    </div>
+                    <div id="discovered-devices-list" class="list-container">
+                        <p style="text-align: center; color: #999;">Click "Scan Network" to discover Alpaca devices</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>Probe Specific Host</h2>
+                    <p style="color: #666; margin-bottom: 15px;">
+                        Manually probe a specific host and port for an Alpaca server.
+                    </p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Host *</label>
+                            <input type="text" id="probe-host" placeholder="e.g., 192.168.1.100">
+                        </div>
+                        <div class="form-group">
+                            <label>Port *</label>
+                            <input type="number" id="probe-port" value="11111">
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-primary" onclick="probeHost()">Probe</button>
+                        </div>
+                    </div>
+                    <div id="probe-result" style="margin-top: 15px;"></div>
                 </div>
             </div>
 

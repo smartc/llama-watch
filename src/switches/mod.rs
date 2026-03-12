@@ -147,11 +147,18 @@ impl SwitchManager {
         for source_id in &config.sources {
             if let Some(monitor_status) = all_statuses.iter().find(|s| &s.id == source_id) {
                 // Check if the monitor has timed out
-                let is_timed_out = if let Some(last_update) = monitor_status.last_update {
-                    let elapsed = (now - last_update).num_seconds() as u64;
+                // timeout_seconds > 0: timeout enabled
+                // timeout_seconds == 0: timeout disabled
+                // timeout_seconds < 0: timeout ignored completely
+                let is_timed_out = if config.timeout_seconds < 0 {
+                    false // Negative timeout = never timeout
+                } else if config.timeout_seconds == 0 {
+                    false // Zero timeout = disabled
+                } else if let Some(last_update) = monitor_status.last_update {
+                    let elapsed = (now - last_update).num_seconds();
                     elapsed > config.timeout_seconds
                 } else {
-                    true // No data yet = timed out
+                    true // No data yet = timed out (only if timeout > 0)
                 };
 
                 // A source is "triggered" when it's in an unsafe condition

@@ -30,7 +30,7 @@ pub struct MeasurementStatus {
     pub value: f64,
     pub threshold: f64,
     pub is_safe: bool,
-    pub timeout_seconds: Option<u64>,
+    pub timeout_seconds: Option<i64>,
     pub last_update: Option<DateTime<Utc>>,
 }
 
@@ -129,10 +129,13 @@ impl WeatherMonitor {
             }
         };
 
-        // Check timeout
+        // Check timeout (if enabled)
+        // timeout_seconds > 0: timeout enabled
+        // timeout_seconds == 0: timeout disabled
+        // timeout_seconds < 0: timeout ignored completely
         let now = Utc::now();
-        let time_since_update = (now - obs.timestamp).num_seconds() as u64;
-        if time_since_update > thresholds.timeout_seconds {
+        let time_since_update = (now - obs.timestamp).num_seconds();
+        if thresholds.timeout_seconds > 0 && time_since_update > thresholds.timeout_seconds {
             let mut status = self.status.write().await;
             status.is_safe = false;
             status.error = Some(format!("Weather data timeout ({} seconds old)", time_since_update));
@@ -140,6 +143,7 @@ impl WeatherMonitor {
             status.pending_since = None;
             return Ok(());
         }
+        // If timeout_seconds <= 0, we skip the timeout check
 
         // Check all configured thresholds
         let mut measurements = HashMap::new();

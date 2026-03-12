@@ -61,22 +61,30 @@ impl AlpacaMonitor {
         if let (Some(pending_safe), Some(pending_since)) = (status.pending_is_safe, status.pending_since) {
             let elapsed = now.signed_duration_since(pending_since);
             if elapsed.num_seconds() as u64 >= self.config.hold_time_seconds {
-                // Hold time has elapsed, commit the pending state
+                // Hold time has elapsed - but re-check the underlying status before committing
+                // to avoid a TOCTOU race where the message loop may have already cleared or
+                // changed the pending state between our read (clone) and this write.
                 let mut s = self.status.write();
-                s.is_safe = pending_safe;
-                s.pending_is_safe = None;
-                s.pending_since = None;
-                status.is_safe = pending_safe;
-                status.pending_is_safe = None;
-                status.pending_since = None;
+                if s.pending_is_safe == Some(pending_safe) && s.pending_since == Some(pending_since) {
+                    s.is_safe = pending_safe;
+                    s.pending_is_safe = None;
+                    s.pending_since = None;
+                }
+                // Always reflect the current underlying state, not the stale clone
+                status.is_safe = s.is_safe;
+                status.pending_is_safe = s.pending_is_safe;
+                status.pending_since = s.pending_since;
             }
         }
 
-        // Check for safety timeout (if enabled - 0 means disabled)
+        // Check for safety timeout (if enabled)
+        // timeout_seconds > 0: timeout enabled
+        // timeout_seconds == 0: timeout disabled
+        // timeout_seconds < 0: timeout ignored completely (no "no data yet" error either)
         if self.config.timeout_seconds > 0 {
             if let Some(last_update) = status.last_update {
                 let elapsed = now.signed_duration_since(last_update);
-                if elapsed.num_seconds() as u64 > self.config.timeout_seconds {
+                if elapsed.num_seconds() > self.config.timeout_seconds {
                     status.is_safe = false;
                     status.error = Some(format!(
                         "Timeout: No data received for {} seconds (timeout: {}s)",
@@ -89,7 +97,12 @@ impl AlpacaMonitor {
                 status.is_safe = false;
                 status.error = Some("No data received yet".to_string());
             }
+        } else if self.config.timeout_seconds == 0 && status.last_update.is_none() {
+            // timeout_seconds == 0 but no data yet - still report waiting for data
+            // (but don't mark as unsafe)
+            status.error = Some("Waiting for initial data".to_string());
         }
+        // If timeout_seconds < 0, we skip all timeout/waiting checks
 
         status
     }

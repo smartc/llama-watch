@@ -2,6 +2,7 @@ pub mod models;
 pub mod safety_monitor;
 pub mod management;
 pub mod discovery;
+pub mod discovery_client;
 pub mod observing_conditions;
 pub mod case_insensitive;
 pub mod switch;

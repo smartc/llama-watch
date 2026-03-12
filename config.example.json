@@ -21,7 +21,7 @@
       "timeout_seconds": 300,
       "hold_time_seconds": 1800,
       "enabled": true,
-      "include_in_safety": true
+      "include_in_safety": false
     },
     "cloud_sensor_2": {
       "id": "cloud_sensor_2",
@@ -32,13 +32,31 @@
       "threshold": 50.0,
       "operator": "greaterthan",
       "safe_when_true": false,
-      "timeout_seconds": 300,
+      "timeout_seconds": -1,
       "hold_time_seconds": 1800,
       "enabled": true,
-      "include_in_safety": true
+      "include_in_safety": false
     }
   },
   "alpaca_monitors": {},
+  "monitor_groups": {
+    "cloud_agreement": {
+      "id": "cloud_agreement",
+      "name": "Cloud Sensor Agreement",
+      "description": "Both cloud sensors must agree it is cloudy before reporting unsafe",
+      "members": ["cloud_sensor_1", "cloud_sensor_2"],
+      "logic": "all",
+      "enabled": true
+    },
+    "multi_sensor_warning": {
+      "id": "multi_sensor_warning",
+      "name": "Multi-Sensor Warning",
+      "description": "At least 2 of 3 sensors must report unsafe",
+      "members": ["cloud_sensor_1", "cloud_sensor_2"],
+      "logic": {"min_of": {"count": 2}},
+      "enabled": true
+    }
+  },
   "switches": {
     "is_cloudy": {
       "id": "is_cloudy",
