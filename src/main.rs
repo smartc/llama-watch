@@ -128,6 +128,7 @@ async fn main() -> Result<()> {
     let alpaca_state = Arc::new(AppState {
         safety_monitor: safety_monitor.clone(),
         monitor_state: shared_monitor_state.clone(),
+        weather_monitors: shared_weather_monitors.clone(),
     });
 
     // Create ObservingConditions application state
