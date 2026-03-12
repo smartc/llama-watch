@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 
 use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, ActionRequest, CommandRequest};
 use crate::monitors::MonitorState;
+use crate::weather::WeatherMonitorManager;
 
 pub struct SafetyMonitor {
     pub connected: SyncRwLock<bool>,
@@ -50,6 +51,7 @@ pub type SharedMonitorState = Arc<RwLock<MonitorState>>;
 pub struct AppState {
     pub safety_monitor: SafetyMonitorState,
     pub monitor_state: SharedMonitorState,
+    pub weather_monitors: Arc<RwLock<WeatherMonitorManager>>,
 }
 
 pub type SharedAppState = Arc<AppState>;
@@ -84,7 +86,9 @@ pub async fn is_safe(
     }
 
     let monitor_state = state.monitor_state.read().await;
-    let is_safe = monitor_state.is_safe();
+    let monitors_safe = monitor_state.is_safe();
+    let weather_safe = state.weather_monitors.read().await.are_all_safe().await;
+    let is_safe = monitors_safe && weather_safe;
 
     // If unsafe, get the detailed comments and include them in the Comments field
     if !is_safe {

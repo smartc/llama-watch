@@ -84,7 +84,8 @@ pub async fn get_status(
     let config = state.config.read().await;
 
     let mut statuses = monitor_state.get_all_statuses();
-    let is_safe = monitor_state.is_safe();
+    let weather_safe = state.weather_monitors.read().await.are_all_safe().await;
+    let is_safe = monitor_state.is_safe() && weather_safe;
 
     // Get ASCOM connected status
     let is_connected = state.safety_monitor.is_connected(&state.monitor_state).await;

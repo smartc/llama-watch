@@ -149,7 +149,7 @@ impl WeatherMonitor {
         let mut measurements = HashMap::new();
         let mut all_safe = true;
 
-        let now = obs.timestamp;
+        let obs_time = obs.timestamp;
 
         // Temperature
         if let Some(threshold) = &thresholds.temperature {
@@ -162,7 +162,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
@@ -178,7 +178,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
@@ -194,7 +194,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
@@ -210,7 +210,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
@@ -226,7 +226,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
@@ -242,7 +242,7 @@ impl WeatherMonitor {
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(now),
+                    last_update: Some(obs_time),
                 });
             }
         }
