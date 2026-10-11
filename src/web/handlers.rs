@@ -770,12 +770,7 @@ pub async fn get_weather_status(
             add_measurement("Wind Gust", "Wind Gust (m/s)", obs.wind_gust);
             add_measurement("Wind Direction", "Wind Direction (°)", obs.wind_direction);
 
-            // Calculate rain rate (mm/hour)
-            let rain_rate = if let Some(prev_obs) = tempest_data.previous_observations.get(&obs.serial_number) {
-                obs.calculate_rain_rate(Some(prev_obs))
-            } else {
-                0.0
-            };
+            let rain_rate = obs.rain_rate();
             add_measurement("Rain Rate", "Rain Rate (mm/hr)", rain_rate);
 
             // Calculate dew point

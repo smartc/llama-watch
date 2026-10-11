@@ -110,8 +110,7 @@ impl WeatherDataAccessor {
     /// Get rain rate for this device
     pub async fn get_rain_rate(&self, config: &WeatherDeviceConfig) -> Option<f64> {
         let current = self.get_observation(config).await?;
-        let previous = self.get_previous_observation(config).await;
-        Some(current.calculate_rain_rate(previous.as_ref()))
+        Some(current.rain_rate())
     }
 
     /// Get time since last update for a specific property
@@ -185,7 +184,7 @@ pub fn get_sensor_description(property: &str) -> String {
         ObservingConditionsProperties::PRESSURE =>
             "Atmospheric pressure from Tempest weather station".to_string(),
         ObservingConditionsProperties::RAIN_RATE =>
-            "Rain rate calculated from precipitation accumulation".to_string(),
+            "Rain rate from precipitation in the latest report interval".to_string(),
         ObservingConditionsProperties::SKY_BRIGHTNESS =>
             "Sky brightness derived from illuminance sensor".to_string(),
         ObservingConditionsProperties::TEMPERATURE =>
@@ -206,7 +205,7 @@ pub fn get_property_value(obs: &TempestObservation, property: &str, previous_obs
         ObservingConditionsProperties::DEW_POINT => Some(obs.calculate_dew_point()),
         ObservingConditionsProperties::HUMIDITY => Some(obs.humidity),
         ObservingConditionsProperties::PRESSURE => Some(obs.pressure),
-        ObservingConditionsProperties::RAIN_RATE => Some(obs.calculate_rain_rate(previous_obs)),
+        ObservingConditionsProperties::RAIN_RATE => Some(obs.rain_rate()),
         ObservingConditionsProperties::SKY_BRIGHTNESS => Some(obs.calculate_sky_brightness()),
         ObservingConditionsProperties::TEMPERATURE => Some(obs.temperature),
         ObservingConditionsProperties::WIND_DIRECTION => Some(obs.wind_direction),
