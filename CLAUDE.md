@@ -191,8 +191,11 @@ This prevents brief UNSAFE blips when adding/removing monitors.
 **Device numbering:**
 - Weather sources are configured in `weather_devices` with device numbers 1, 2, ... (0 is reserved)
 - **Device 0 is the aggregate** (`weather_aggregate`): each property is served from the first source in its
-  priority list whose data is newer than `stale_after_seconds`; if all are stale, the newest is served so safety
-  timeouts still apply. `property_sources` overrides `source_priority` per property; an empty `source_priority`
+  priority list whose data is newer than `stale_after_seconds` (default 300) and that has reported without gaps for
+  `return_after_seconds` (default 300), so after a fallback the aggregate only returns to a recovered source once it
+  has proven steady. If no fresh source is steady yet (e.g. right after startup) the first fresh one is used; if all
+  are stale, the newest is served so safety timeouts still apply. Streaks are tracked per source and property in
+  `WeatherStore` (gap limit = `stale_after_seconds`); source changes are logged (`Aggregate <property>: switched from ...`). `property_sources` overrides `source_priority` per property; an empty `source_priority`
   means all enabled sources in device-number order
 - Device 0 exists once at least one source is enabled. With two or more enabled sources, each source with
   `expose_device: true` is also served as its own device

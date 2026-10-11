@@ -1,5 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
-use parking_lot::RwLock as SyncRwLock;
+use parking_lot::{Mutex as SyncMutex, RwLock as SyncRwLock};
+use tracing::{debug, info, warn};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -69,11 +70,13 @@ impl ObservingConditionsDevice {
 pub struct WeatherDataAccessor {
     pub store: SharedWeatherStore,
     pub config: Arc<RwLock<AppConfig>>,
+    /// Source each aggregate property was last served from, for logging changes
+    aggregate_sources: SyncMutex<HashMap<WeatherProperty, u32>>,
 }
 
 impl WeatherDataAccessor {
     pub fn new(store: SharedWeatherStore, config: Arc<RwLock<AppConfig>>) -> Self {
-        Self { store, config }
+        Self { store, config, aggregate_sources: SyncMutex::new(HashMap::new()) }
     }
 
     /// Current readings for a device
@@ -85,7 +88,59 @@ impl WeatherDataAccessor {
     /// Current readings for a device, for callers already holding the config lock
     pub async fn readings_with(&self, config: &AppConfig, kind: WeatherDeviceKind) -> Readings {
         let store = self.store.read().await;
-        resolve_readings(&store, config, kind, Utc::now())
+        let now = Utc::now();
+        let readings = resolve_readings(&store, config, kind, now);
+        if kind == WeatherDeviceKind::Aggregate {
+            self.log_source_changes(&store, config, &readings, now);
+        }
+        readings
+    }
+
+    /// Log when an aggregate property starts coming from a different source
+    fn log_source_changes(&self, store: &WeatherStore, config: &AppConfig, readings: &Readings, now: DateTime<Utc>) {
+        let name = |n: u32| config.weather_devices.get(&n)
+            .map(|d| format!("{} (#{})", d.name, n))
+            .unwrap_or_else(|| format!("#{}", n));
+        let mut previous = self.aggregate_sources.lock();
+
+        for property in WeatherProperty::ALL {
+            let current = readings.get(&property).map(|r| r.source_device);
+            let before = previous.get(&property).copied();
+            if current == before {
+                continue;
+            }
+            let label = property.label();
+            if store.starting_up(now) {
+                // Sources report for the first time at different moments after startup
+                if let Some(to) = current {
+                    debug!("Aggregate {}: using {}", label, name(to));
+                }
+            } else {
+                match (before, current) {
+                    (None, Some(to)) => info!("Aggregate {}: now using {}", label, name(to)),
+                    (Some(from), None) => warn!("Aggregate {}: no source has data (was {})", label, name(from)),
+                    (Some(from), Some(to)) => {
+                        let order: Vec<u32> = providing_sources(config, WeatherDeviceKind::Aggregate, property)
+                            .into_iter().map(|(n, _)| n).collect();
+                        let rank = |n: u32| order.iter().position(|&o| o == n).unwrap_or(usize::MAX);
+                        if rank(to) < rank(from) {
+                            info!("Aggregate {}: back to {} (was {})", label, name(to), name(from));
+                        } else {
+                            let reason = config.weather_devices.get(&from)
+                                .and_then(|d| source_readings(store, d).get(&property).map(|r| r.timestamp))
+                                .map(|ts| format!("its data is {}s old", (now - ts).num_seconds()))
+                                .unwrap_or_else(|| "it has no data".to_string());
+                            info!("Aggregate {}: switched from {} to {}; {}", label, name(from), name(to), reason);
+                        }
+                    }
+                    (None, None) => {}
+                }
+            }
+            match current {
+                Some(n) => previous.insert(property, n),
+                None => previous.remove(&property),
+            };
+        }
     }
 
     /// Whether a device implements an ASCOM ObservingConditions property
@@ -137,30 +192,36 @@ pub fn device_supported_properties(config: &AppConfig, kind: WeatherDeviceKind) 
         .collect()
 }
 
-/// Resolve the readings a device currently serves
+/// Resolve the readings a device currently serves. For each property, in
+/// priority order, use the first source that is fresh and has been reporting
+/// without gaps for return_after_seconds. A source that recovers after
+/// dropping out therefore only takes over again once it has proven steady,
+/// instead of the aggregate bouncing between sources. If no fresh source is
+/// steady yet, the first fresh one is used; if all are stale, the most recent
+/// reading is served so weather monitor timeouts still apply to it.
 pub fn resolve_readings(store: &WeatherStore, config: &AppConfig, kind: WeatherDeviceKind, now: DateTime<Utc>) -> Readings {
-    let stale_after = config.weather_aggregate.as_ref()
-        .map(|a| Duration::seconds(a.stale_after_seconds as i64))
-        .unwrap_or_else(|| Duration::seconds(120));
+    let aggregate = config.weather_aggregate.clone().unwrap_or_default();
+    let stale_after = Duration::seconds(aggregate.stale_after_seconds as i64);
+    let return_after = Duration::seconds(aggregate.return_after_seconds as i64);
     let mut cache: HashMap<u32, Readings> = HashMap::new();
     let mut readings = Readings::new();
 
     for property in WeatherProperty::ALL {
-        let candidates: Vec<Reading> = providing_sources(config, kind, property).into_iter()
+        let candidates: Vec<(Reading, &WeatherDeviceConfig)> = providing_sources(config, kind, property).into_iter()
             .filter_map(|(n, device)| {
                 cache.entry(n)
                     .or_insert_with(|| source_readings(store, device))
                     .get(&property)
-                    .cloned()
+                    .map(|r| (r.clone(), device))
             })
             .collect();
 
-        // First fresh reading in priority order; if all are stale, the most
-        // recent one so weather monitor timeouts still apply to it
+        let fresh = |r: &Reading| now - r.timestamp <= stale_after;
         let chosen = candidates.iter()
-            .find(|r| now - r.timestamp <= stale_after)
-            .or_else(|| candidates.iter().max_by_key(|r| r.timestamp));
-        if let Some(reading) = chosen {
+            .find(|(r, d)| fresh(r) && store.is_steady(&d.source, property, now, return_after))
+            .or_else(|| candidates.iter().find(|(r, _)| fresh(r)))
+            .or_else(|| candidates.iter().max_by_key(|(r, _)| r.timestamp));
+        if let Some((reading, _)) = chosen {
             readings.insert(property, reading.clone());
         }
     }
@@ -310,6 +371,69 @@ mod tests {
         // Tempest and Ecowitt don't provide sky quality
         assert!(!device_supported_properties(&config, WeatherDeviceKind::Source(1))
             .contains(&WeatherProperty::SkyQuality));
+    }
+
+    fn wind(store: &mut WeatherStore, key: String, at: DateTime<Utc>, value: f64) {
+        store.update(key, WeatherObservation::new(at, BTreeMap::from([(WeatherProperty::WindSpeed, value)])));
+    }
+
+    #[test]
+    fn recovered_source_is_used_again_only_after_reporting_steadily() {
+        let now = Utc::now();
+        let (_, config) = setup(now, 10, 10);
+        let mut store = WeatherStore::started_at(now - Duration::seconds(3600));
+        let tempest = WeatherStore::tempest_key("ST-1");
+        let ecowitt = WeatherStore::ecowitt_key("gw");
+
+        // Ecowitt reports throughout; Tempest drops out for half an hour and is back 120s ago
+        for t in (0..=3600).step_by(30) {
+            wind(&mut store, ecowitt.clone(), now - Duration::seconds(3600 - t), 2.0);
+        }
+        for t in (0..=1800).step_by(60) {
+            wind(&mut store, tempest.clone(), now - Duration::seconds(3600 - t), 1.0);
+        }
+        wind(&mut store, tempest.clone(), now - Duration::seconds(120), 1.0);
+        wind(&mut store, tempest.clone(), now - Duration::seconds(60), 1.0);
+        wind(&mut store, tempest.clone(), now, 1.0);
+
+        // Tempest is fresh and first in priority, but has only been back for 120s
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, now);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].source_device, 2);
+
+        // Once it has reported steadily for 300s, it takes over again
+        let later = now + Duration::seconds(200);
+        for t in (60..=200).step_by(60) {
+            wind(&mut store, tempest.clone(), now + Duration::seconds(t), 1.0);
+            wind(&mut store, ecowitt.clone(), now + Duration::seconds(t), 2.0);
+        }
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, later);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].source_device, 1);
+    }
+
+    #[test]
+    fn primary_is_used_when_no_source_is_steady_yet() {
+        let now = Utc::now();
+        let (_, config) = setup(now, 10, 10);
+        let mut store = WeatherStore::started_at(now - Duration::seconds(3600));
+        // Both sources only just appeared, long after startup
+        wind(&mut store, WeatherStore::tempest_key("ST-1"), now - Duration::seconds(30), 1.0);
+        wind(&mut store, WeatherStore::ecowitt_key("gw"), now - Duration::seconds(10), 2.0);
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, now);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].source_device, 1);
+    }
+
+    #[test]
+    fn repeated_measurement_time_does_not_count_as_steady() {
+        let now = Utc::now();
+        let mut store = WeatherStore::started_at(now - Duration::seconds(3600));
+        let source = ecowitt();
+        let key = WeatherStore::ecowitt_key("gw");
+        // A stuck sensor keeps reporting the same measurement time
+        for _ in 0..20 {
+            wind(&mut store, key.clone(), now - Duration::seconds(400), 2.0);
+        }
+        wind(&mut store, key.clone(), now, 2.0);
+        assert!(!store.is_steady(&source, WeatherProperty::WindSpeed, now, Duration::seconds(300)));
     }
 
     #[test]

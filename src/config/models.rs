@@ -262,6 +262,9 @@ impl AppConfig {
         }
 
         if let Some(aggregate) = &self.weather_aggregate {
+            if aggregate.stale_after_seconds == 0 {
+                return Err(anyhow::anyhow!("Aggregate weather device stale_after_seconds must be at least 1"));
+            }
             let referenced = aggregate.source_priority.iter()
                 .chain(aggregate.property_sources.values().flatten());
             for number in referenced {
@@ -407,6 +410,10 @@ pub struct WeatherAggregateConfig {
     /// Data older than this is skipped in favour of the next source in the list
     #[serde(default = "default_stale_after")]
     pub stale_after_seconds: u64,
+    /// After falling back, a higher-priority source is only used again once it
+    /// has reported without gaps for this long
+    #[serde(default = "default_return_after")]
+    pub return_after_seconds: u64,
     /// Default source order (device numbers). Empty = all enabled sources by device number.
     #[serde(default)]
     pub source_priority: Vec<u32>,
@@ -424,6 +431,7 @@ impl Default for WeatherAggregateConfig {
             description: String::new(),
             auto_connect: true,
             stale_after_seconds: default_stale_after(),
+            return_after_seconds: default_return_after(),
             source_priority: Vec::new(),
             property_sources: HashMap::new(),
             safety_thresholds: None,
@@ -460,7 +468,11 @@ fn default_aggregate_name() -> String {
 }
 
 fn default_stale_after() -> u64 {
-    120
+    300
+}
+
+fn default_return_after() -> u64 {
+    300
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

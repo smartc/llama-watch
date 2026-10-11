@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
     let weather_data_accessor = Arc::new(WeatherDataAccessor::new(weather_store.clone(), shared_config.clone()));
     let weather_service = Arc::new(WeatherService::new(weather_data_accessor.clone()));
     weather_service.apply_config().await;
+    weather_service.spawn_source_watch();
     let oc_devices_shared = weather_service.devices.clone();
     let shared_weather_monitors = weather_service.monitors.clone();
     info!("Weather devices and safety monitors initialized");

@@ -148,7 +148,8 @@
     "name": "LLAMA Weather",
     "description": "Best available reading from each weather source",
     "auto_connect": true,
-    "stale_after_seconds": 120,
+    "stale_after_seconds": 300,
+    "return_after_seconds": 300,
     "source_priority": [],
     "property_sources": {
       "wind_speed": [

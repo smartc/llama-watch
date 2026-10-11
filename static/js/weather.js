@@ -92,7 +92,7 @@ function renderWeatherAggregateSummary() {
                 <div><strong>Description:</strong> ${escapeHtml(agg.description)}</div>
                 <div><strong>Source priority:</strong> ${defaultOrder}</div>
                 ${overrides ? `<div><strong>Per-measurement overrides:</strong>${overrides}</div>` : ''}
-                <div><strong>Stale after:</strong> ${agg.stale_after_seconds}s</div>
+                <div><strong>Stale after:</strong> ${agg.stale_after_seconds}s · <strong>Return after:</strong> ${agg.return_after_seconds}s</div>
                 <div><strong>Auto-Connect:</strong> ${agg.auto_connect ? 'Yes' : 'No'}</div>
             </div>
         </div>
@@ -203,6 +203,7 @@ async function editWeatherAggregate() {
         document.getElementById('weather-device-description').value = agg.description;
         document.getElementById('weather-device-auto-connect').checked = agg.auto_connect;
         document.getElementById('weather-aggregate-stale-after').value = agg.stale_after_seconds;
+        document.getElementById('weather-aggregate-return-after').value = agg.return_after_seconds;
 
         await loadWeatherSourceValues();
         loadSourceRows(agg);
@@ -575,7 +576,8 @@ async function saveWeatherDevice() {
             name,
             description,
             auto_connect: document.getElementById('weather-device-auto-connect').checked,
-            stale_after_seconds: parseInt(document.getElementById('weather-aggregate-stale-after').value) || 120,
+            stale_after_seconds: parseInt(document.getElementById('weather-aggregate-stale-after').value) || 300,
+            return_after_seconds: (v => isNaN(v) ? 300 : v)(parseInt(document.getElementById('weather-aggregate-return-after').value)),
             source_priority,
             property_sources: collectAggregatePropertySources(),
             safety_thresholds: collectSafetyThresholds()

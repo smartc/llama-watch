@@ -34,6 +34,10 @@ impl WeatherService {
     /// Devices that still exist keep their connected state.
     pub async fn apply_config(&self) {
         let config = self.data.config.read().await.clone();
+        let stale_after = config.weather_aggregate.as_ref()
+            .map(|a| a.stale_after_seconds)
+            .unwrap_or(super::observation::DEFAULT_GAP_LIMIT_SECONDS as u64);
+        self.data.store.write().await.set_gap_limit(chrono::Duration::seconds(stale_after as i64));
 
         let mut devices = self.devices.write().await;
         let mut updated = HashMap::new();
@@ -55,6 +59,21 @@ impl WeatherService {
 
         self.monitors.write().await.rebuild(&config, self.data.clone()).await;
         self.pollers.lock().await.sync(&config.weather_devices, &self.data.store);
+    }
+}
+
+impl WeatherService {
+    /// Resolve the aggregate device every few seconds so source changes are
+    /// logged when they happen, not only when a client next asks
+    pub fn spawn_source_watch(&self) {
+        let data = self.data.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                data.readings(WeatherDeviceKind::Aggregate).await;
+            }
+        });
     }
 }
 

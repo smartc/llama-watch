@@ -497,10 +497,17 @@
 
                     <div id="weather-aggregate-fields" style="display: none;">
                         <h3>Source Selection</h3>
-                        <div class="form-group">
-                            <label>Stale After (seconds)</label>
-                            <input type="number" id="weather-aggregate-stale-after" value="120" min="1">
-                            <div class="info-text">Data older than this is skipped in favour of the next source. If every source is stale, the newest data is still served and safety timeouts apply.</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Stale After (seconds)</label>
+                                <input type="number" id="weather-aggregate-stale-after" value="300" min="1">
+                                <div class="info-text">A source whose data is older than this is skipped in favour of the next one. If every source is stale, the newest data is still served and safety timeouts apply. Keep this well above each source's report interval (Tempest: 60s).</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Return After (seconds)</label>
+                                <input type="number" id="weather-aggregate-return-after" value="300" min="0">
+                                <div class="info-text">After falling back, a higher-priority source is used again only once it has reported without gaps for this long. Prevents switching back and forth when a source is intermittent.</div>
+                            </div>
                         </div>
                         <div class="form-group">
                             <label>Default Source Order</label>

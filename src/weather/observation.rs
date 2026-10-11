@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -193,10 +193,35 @@ pub struct Reading {
 
 pub type Readings = BTreeMap<WeatherProperty, Reading>;
 
+/// Gap between measurements that breaks a source's "reporting steadily" streak,
+/// until configuration says otherwise (aggregate stale_after_seconds)
+pub const DEFAULT_GAP_LIMIT_SECONDS: i64 = 300;
+
+/// How long a source has been reporting a value without gaps
+#[derive(Debug, Clone, Copy)]
+struct Streak {
+    since: DateTime<Utc>,
+    last: DateTime<Utc>,
+}
+
 /// Latest observation from every weather station heard from, keyed by station
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct WeatherStore {
     observations: HashMap<String, WeatherObservation>,
+    streaks: HashMap<String, BTreeMap<WeatherProperty, Streak>>,
+    started: DateTime<Utc>,
+    gap_limit: Duration,
+}
+
+impl Default for WeatherStore {
+    fn default() -> Self {
+        Self {
+            observations: HashMap::new(),
+            streaks: HashMap::new(),
+            started: Utc::now(),
+            gap_limit: Duration::seconds(DEFAULT_GAP_LIMIT_SECONDS),
+        }
+    }
 }
 
 pub type SharedWeatherStore = Arc<RwLock<WeatherStore>>;
@@ -214,31 +239,80 @@ impl WeatherStore {
         format!("alpaca:{}:{}:{}", host.trim().to_ascii_lowercase(), port, device_number)
     }
 
+    #[cfg(test)]
+    pub fn started_at(started: DateTime<Utc>) -> Self {
+        Self { started, ..Self::default() }
+    }
+
+    /// Whether LLAMA started recently enough that sources may still be making
+    /// their first reports
+    pub fn starting_up(&self, now: DateTime<Utc>) -> bool {
+        now - self.started < self.gap_limit
+    }
+
+    /// Gap between measurements that counts as the source having dropped out
+    pub fn set_gap_limit(&mut self, gap_limit: Duration) {
+        self.gap_limit = gap_limit;
+    }
+
     pub fn update(&mut self, key: String, observation: WeatherObservation) {
+        let streaks = self.streaks.entry(key.clone()).or_default();
+        for property in WeatherProperty::ALL {
+            if observation.get(property).is_none() {
+                continue;
+            }
+            let measured = observation.measured_at(property);
+            match streaks.get_mut(&property) {
+                // Same measurement reported again (e.g. a stuck sensor): no new data
+                Some(streak) if measured <= streak.last => {}
+                Some(streak) => {
+                    if measured - streak.last > self.gap_limit {
+                        streak.since = measured;
+                    }
+                    streak.last = measured;
+                }
+                None => {
+                    streaks.insert(property, Streak { since: measured, last: measured });
+                }
+            }
+        }
         self.observations.insert(key, observation);
     }
 
-    /// Latest observation for a configured data source
-    pub fn observation_for(&self, source: &WeatherDataSource) -> Option<&WeatherObservation> {
+    /// Store key of the station a configured data source currently reads from
+    pub fn key_for(&self, source: &WeatherDataSource) -> Option<String> {
         match source {
-            WeatherDataSource::Tempest { serial_number: Some(sn) } => {
-                self.observations.get(&Self::tempest_key(sn))
-            }
+            WeatherDataSource::Tempest { serial_number: Some(sn) } => Some(Self::tempest_key(sn)),
             WeatherDataSource::Tempest { serial_number: None } => {
                 // Any Tempest on the network; prefer the most recently heard one
                 self.observations.iter()
                     .filter(|(key, _)| key.starts_with("tempest:"))
-                    .map(|(_, obs)| obs)
-                    .max_by_key(|obs| obs.timestamp)
+                    .max_by_key(|(_, obs)| obs.timestamp)
+                    .map(|(key, _)| key.clone())
             }
-            WeatherDataSource::Ecowitt { host, .. } => {
-                self.observations.get(&Self::ecowitt_key(host))
-            }
+            WeatherDataSource::Ecowitt { host, .. } => Some(Self::ecowitt_key(host)),
             WeatherDataSource::Alpaca { host, port, device_number, .. } => {
-                self.observations.get(&Self::alpaca_key(host, *port, *device_number))
+                Some(Self::alpaca_key(host, *port, *device_number))
             }
             WeatherDataSource::WeatherUnderground { .. } => None,
         }
+    }
+
+    /// Latest observation for a configured data source
+    pub fn observation_for(&self, source: &WeatherDataSource) -> Option<&WeatherObservation> {
+        self.key_for(source).and_then(|key| self.observations.get(&key))
+    }
+
+    /// Whether a source has reported a value without gaps for at least `period`,
+    /// or without gaps since LLAMA started
+    pub fn is_steady(&self, source: &WeatherDataSource, property: WeatherProperty, now: DateTime<Utc>, period: Duration) -> bool {
+        let Some(streak) = self.key_for(source)
+            .and_then(|key| self.streaks.get(&key))
+            .and_then(|streaks| streaks.get(&property))
+        else {
+            return false;
+        };
+        now - streak.since >= period || streak.since - self.started <= self.gap_limit
     }
 }
 
