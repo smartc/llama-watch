@@ -1,0 +1,243 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use crate::config::models::WeatherDataSource;
+
+/// Weather quantities LLAMA understands. All values are stored in metric units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeatherProperty {
+    Temperature,     // °C
+    Humidity,        // %
+    DewPoint,        // °C
+    Pressure,        // hPa, station (not sea-level) pressure
+    WindSpeed,       // m/s
+    WindGust,        // m/s
+    WindDirection,   // degrees
+    RainRate,        // mm/hour
+    SkyBrightness,   // lux (ASCOM definition)
+    SolarRadiation,  // W/m² (not an ASCOM property)
+    UvIndex,         // index (not an ASCOM property)
+}
+
+impl WeatherProperty {
+    pub const ALL: [WeatherProperty; 11] = [
+        WeatherProperty::Temperature,
+        WeatherProperty::Humidity,
+        WeatherProperty::DewPoint,
+        WeatherProperty::Pressure,
+        WeatherProperty::WindSpeed,
+        WeatherProperty::WindGust,
+        WeatherProperty::WindDirection,
+        WeatherProperty::RainRate,
+        WeatherProperty::SkyBrightness,
+        WeatherProperty::SolarRadiation,
+        WeatherProperty::UvIndex,
+    ];
+
+    /// ASCOM ObservingConditions property name, or None if ASCOM has no such property
+    pub fn ascom_name(self) -> Option<&'static str> {
+        match self {
+            WeatherProperty::Temperature => Some("Temperature"),
+            WeatherProperty::Humidity => Some("Humidity"),
+            WeatherProperty::DewPoint => Some("DewPoint"),
+            WeatherProperty::Pressure => Some("Pressure"),
+            WeatherProperty::WindSpeed => Some("WindSpeed"),
+            WeatherProperty::WindGust => Some("WindGust"),
+            WeatherProperty::WindDirection => Some("WindDirection"),
+            WeatherProperty::RainRate => Some("RainRate"),
+            WeatherProperty::SkyBrightness => Some("SkyBrightness"),
+            WeatherProperty::SolarRadiation | WeatherProperty::UvIndex => None,
+        }
+    }
+
+    pub fn from_ascom_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter()
+            .find(|p| p.ascom_name().is_some_and(|n| n.eq_ignore_ascii_case(name)))
+    }
+
+    /// Display label, also used as the measurement key in weather status
+    pub fn label(self) -> &'static str {
+        match self {
+            WeatherProperty::Temperature => "Temperature",
+            WeatherProperty::Humidity => "Humidity",
+            WeatherProperty::DewPoint => "Dew Point",
+            WeatherProperty::Pressure => "Pressure",
+            WeatherProperty::WindSpeed => "Wind Speed",
+            WeatherProperty::WindGust => "Wind Gust",
+            WeatherProperty::WindDirection => "Wind Direction",
+            WeatherProperty::RainRate => "Rain Rate",
+            WeatherProperty::SkyBrightness => "Sky Brightness",
+            WeatherProperty::SolarRadiation => "Solar Radiation",
+            WeatherProperty::UvIndex => "UV Index",
+        }
+    }
+
+    pub fn unit(self) -> &'static str {
+        match self {
+            WeatherProperty::Temperature | WeatherProperty::DewPoint => "°C",
+            WeatherProperty::Humidity => "%",
+            WeatherProperty::Pressure => "hPa",
+            WeatherProperty::WindSpeed | WeatherProperty::WindGust => "m/s",
+            WeatherProperty::WindDirection => "°",
+            WeatherProperty::RainRate => "mm/hr",
+            WeatherProperty::SkyBrightness => "lux",
+            WeatherProperty::SolarRadiation => "W/m²",
+            WeatherProperty::UvIndex => "",
+        }
+    }
+
+    /// Label with unit, e.g. "Temperature (°C)"
+    pub fn display_name(self) -> String {
+        match self.unit() {
+            "" => self.label().to_string(),
+            unit => format!("{} ({})", self.label(), unit),
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            WeatherProperty::Temperature => "Ambient air temperature",
+            WeatherProperty::Humidity => "Relative humidity",
+            WeatherProperty::DewPoint => "Dew point",
+            WeatherProperty::Pressure => "Atmospheric pressure at the station",
+            WeatherProperty::WindSpeed => "Average wind speed",
+            WeatherProperty::WindGust => "Wind gust",
+            WeatherProperty::WindDirection => "Wind direction",
+            WeatherProperty::RainRate => "Rain rate",
+            WeatherProperty::SkyBrightness => "Sky brightness (illuminance)",
+            WeatherProperty::SolarRadiation => "Solar radiation",
+            WeatherProperty::UvIndex => "UV index",
+        }
+    }
+}
+
+/// A single snapshot from one weather station, in metric units
+#[derive(Debug, Clone)]
+pub struct WeatherObservation {
+    pub timestamp: DateTime<Utc>,
+    values: BTreeMap<WeatherProperty, f64>,
+}
+
+impl WeatherObservation {
+    /// Build an observation, deriving dew point from temperature and humidity
+    /// when the station doesn't report it directly
+    pub fn new(timestamp: DateTime<Utc>, mut values: BTreeMap<WeatherProperty, f64>) -> Self {
+        if !values.contains_key(&WeatherProperty::DewPoint) {
+            if let (Some(t), Some(h)) = (
+                values.get(&WeatherProperty::Temperature),
+                values.get(&WeatherProperty::Humidity),
+            ) {
+                if *h > 0.0 {
+                    values.insert(WeatherProperty::DewPoint, calculate_dew_point(*t, *h));
+                }
+            }
+        }
+        Self { timestamp, values }
+    }
+
+    pub fn get(&self, property: WeatherProperty) -> Option<f64> {
+        self.values.get(&property).copied()
+    }
+}
+
+/// Dew point from temperature (°C) and relative humidity (%) using the Magnus formula
+pub fn calculate_dew_point(temperature: f64, humidity: f64) -> f64 {
+    let a = 17.27;
+    let b = 237.7;
+    let alpha = ((a * temperature) / (b + temperature)) + (humidity / 100.0).ln();
+    (b * alpha) / (a - alpha)
+}
+
+/// A value served by a weather device, with where and when it came from
+#[derive(Debug, Clone)]
+pub struct Reading {
+    pub value: f64,
+    pub timestamp: DateTime<Utc>,
+    /// Device number of the source the value was taken from
+    pub source_device: u32,
+}
+
+pub type Readings = BTreeMap<WeatherProperty, Reading>;
+
+/// Latest observation from every weather station heard from, keyed by station
+#[derive(Debug, Default)]
+pub struct WeatherStore {
+    observations: HashMap<String, WeatherObservation>,
+}
+
+pub type SharedWeatherStore = Arc<RwLock<WeatherStore>>;
+
+impl WeatherStore {
+    pub fn tempest_key(serial_number: &str) -> String {
+        format!("tempest:{}", serial_number)
+    }
+
+    pub fn update(&mut self, key: String, observation: WeatherObservation) {
+        self.observations.insert(key, observation);
+    }
+
+    /// Latest observation for a configured data source
+    pub fn observation_for(&self, source: &WeatherDataSource) -> Option<&WeatherObservation> {
+        match source {
+            WeatherDataSource::Tempest { serial_number: Some(sn) } => {
+                self.observations.get(&Self::tempest_key(sn))
+            }
+            WeatherDataSource::Tempest { serial_number: None } => {
+                // Any Tempest on the network; prefer the most recently heard one
+                self.observations.iter()
+                    .filter(|(key, _)| key.starts_with("tempest:"))
+                    .map(|(_, obs)| obs)
+                    .max_by_key(|obs| obs.timestamp)
+            }
+            WeatherDataSource::WeatherUnderground { .. } => None,
+        }
+    }
+}
+
+/// Properties a data source type can provide. This is fixed per source type so
+/// that ASCOM clients see a stable set of implemented properties.
+pub fn supported_properties(source: &WeatherDataSource) -> &'static [WeatherProperty] {
+    match source {
+        WeatherDataSource::Tempest { .. } => &WeatherProperty::ALL,
+        WeatherDataSource::WeatherUnderground { .. } => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dew_point_is_derived_when_not_reported() {
+        let values = BTreeMap::from([
+            (WeatherProperty::Temperature, 20.0),
+            (WeatherProperty::Humidity, 50.0),
+        ]);
+        let obs = WeatherObservation::new(Utc::now(), values);
+        let dp = obs.get(WeatherProperty::DewPoint).unwrap();
+        assert!((dp - 9.26).abs() < 0.05, "dew point {}", dp);
+    }
+
+    #[test]
+    fn reported_dew_point_is_kept() {
+        let values = BTreeMap::from([
+            (WeatherProperty::Temperature, 20.0),
+            (WeatherProperty::Humidity, 50.0),
+            (WeatherProperty::DewPoint, 1.0),
+        ]);
+        let obs = WeatherObservation::new(Utc::now(), values);
+        assert_eq!(obs.get(WeatherProperty::DewPoint), Some(1.0));
+    }
+
+    #[test]
+    fn ascom_names_round_trip_case_insensitively() {
+        assert_eq!(WeatherProperty::from_ascom_name("skybrightness"), Some(WeatherProperty::SkyBrightness));
+        assert_eq!(WeatherProperty::from_ascom_name("DewPoint"), Some(WeatherProperty::DewPoint));
+        assert_eq!(WeatherProperty::from_ascom_name("SolarRadiation"), None);
+        assert_eq!(WeatherProperty::from_ascom_name("SkyQuality"), None);
+    }
+}

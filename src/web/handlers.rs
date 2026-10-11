@@ -15,7 +15,7 @@ use crate::{
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
     switches::SharedSwitchManager,
-    weather::{WeatherMonitorManager, ObservingConditionsDevice, tempest::TempestData},
+    weather::{WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor},
 };
 use std::collections::HashMap;
 
@@ -29,7 +29,7 @@ pub struct WebState {
     pub safety_monitor: Arc<SafetyMonitor>,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
     pub weather_monitors: Arc<RwLock<WeatherMonitorManager>>,
-    pub tempest_data: Arc<RwLock<TempestData>>,
+    pub weather_data: Arc<WeatherDataAccessor>,
 }
 
 pub type SharedWebState = Arc<WebState>;
@@ -578,7 +578,7 @@ pub async fn create_weather_device(
             let mut weather_monitors = state.weather_monitors.write().await;
             let mut devices_map = HashMap::new();
             devices_map.insert(device_config.device_number, device_config.clone());
-            weather_monitors.initialize(&devices_map, state.tempest_data.clone()).await;
+            weather_monitors.initialize(&devices_map, state.weather_data.clone()).await;
         }
     }
 
@@ -632,7 +632,7 @@ pub async fn update_weather_device(
             let mut weather_monitors = state.weather_monitors.write().await;
             let mut devices_map = HashMap::new();
             devices_map.insert(device_number, device_config.clone());
-            weather_monitors.initialize(&devices_map, state.tempest_data.clone()).await;
+            weather_monitors.initialize(&devices_map, state.weather_data.clone()).await;
         }
     }
 
@@ -702,11 +702,8 @@ pub async fn toggle_weather_device(
 pub async fn get_weather_status(
     State(state): State<SharedWebState>,
 ) -> Json<Vec<WeatherStatusResponse>> {
-    use crate::config::models::WeatherDataSource;
-
     let config = state.config.read().await;
     let weather_monitors = state.weather_monitors.read().await;
-    let tempest_data = state.tempest_data.read().await;
     let statuses = weather_monitors.get_all_statuses().await;
 
     let mut response = Vec::new();
@@ -717,68 +714,25 @@ pub async fn get_weather_status(
             continue; // Skip disabled devices
         }
 
-        // Get actual weather observation data
-        let observation = match &device_config.source {
-            WeatherDataSource::Tempest { serial_number } => {
-                if let Some(sn) = serial_number {
-                    tempest_data.observations.get(sn).cloned()
-                } else {
-                    tempest_data.observations.values().next().cloned()
-                }
-            }
-            WeatherDataSource::WeatherUnderground { .. } => None,
-        };
+        let readings = state.weather_data.readings(device_config).await;
 
         // Get safety monitoring status for this device (if exists)
         let safety_status = statuses.get(device_number);
 
         let mut measurements = HashMap::new();
-
-        if let Some(ref obs) = observation {
-            let last_update_str = obs.timestamp.to_rfc3339();
-
-            // Helper function to add a measurement
-            let mut add_measurement = |key: &str, name: &str, value: f64| {
-                // Check if this measurement is being monitored for safety
-                let (threshold, is_safe, is_monitored, timeout_seconds) = if let Some(status) = safety_status {
-                    if let Some(m) = status.measurements.get(key) {
-                        (m.threshold, m.is_safe, true, m.timeout_seconds)
-                    } else {
-                        (0.0, true, false, None) // Not monitored
-                    }
-                } else {
-                    (0.0, true, false, None) // No safety monitoring configured
-                };
-
-                measurements.insert(key.to_string(), MeasurementInfo {
-                    name: name.to_string(),
-                    value,
-                    threshold,
-                    is_safe,
-                    is_monitored,
-                    timeout_seconds,
-                    last_update: Some(last_update_str.clone()),
-                });
-            };
-
-            // Add all available measurements
+        for (property, reading) in &readings {
             // Keys must match those used in weather_monitor.rs for safety threshold lookups
-            add_measurement("Temperature", "Temperature (°C)", obs.temperature);
-            add_measurement("Humidity", "Humidity (%)", obs.humidity);
-            add_measurement("Pressure", "Pressure (MB)", obs.pressure);
-            add_measurement("Wind Speed", "Wind Speed (m/s)", obs.wind_avg);
-            add_measurement("Wind Gust", "Wind Gust (m/s)", obs.wind_gust);
-            add_measurement("Wind Direction", "Wind Direction (°)", obs.wind_direction);
-
-            let rain_rate = obs.rain_rate();
-            add_measurement("Rain Rate", "Rain Rate (mm/hr)", rain_rate);
-
-            // Calculate dew point
-            let dew_point = calculate_dew_point(obs.temperature, obs.humidity);
-            add_measurement("Dew Point", "Dew Point (°C)", dew_point);
-
-            // ASCOM SkyBrightness is illuminance in lux
-            add_measurement("Sky Brightness", "Sky Brightness (lux)", obs.illuminance);
+            let key = property.label();
+            let monitored = safety_status.and_then(|status| status.measurements.get(key));
+            measurements.insert(key.to_string(), MeasurementInfo {
+                name: property.display_name(),
+                value: reading.value,
+                threshold: monitored.map(|m| m.threshold).unwrap_or(0.0),
+                is_safe: monitored.map(|m| m.is_safe).unwrap_or(true),
+                is_monitored: monitored.is_some(),
+                timeout_seconds: monitored.and_then(|m| m.timeout_seconds),
+                last_update: Some(reading.timestamp.to_rfc3339()),
+            });
         }
 
         // Determine overall safety status
@@ -788,8 +742,10 @@ pub async fn get_weather_status(
             (true, None) // No safety monitoring = always safe
         };
 
-        let last_update = observation.as_ref()
-            .map(|obs| obs.timestamp.to_rfc3339());
+        let last_update = readings.values()
+            .map(|r| r.timestamp)
+            .max()
+            .map(|ts| ts.to_rfc3339());
 
         response.push(WeatherStatusResponse {
             device_number: *device_number,
@@ -804,14 +760,6 @@ pub async fn get_weather_status(
 
     response.sort_by_key(|s| s.device_number);
     Json(response)
-}
-
-// Helper function to calculate dew point from temperature and humidity
-fn calculate_dew_point(temp_c: f64, humidity: f64) -> f64 {
-    let a = 17.27;
-    let b = 237.7;
-    let alpha = ((a * temp_c) / (b + temp_c)) + (humidity / 100.0).ln();
-    (b * alpha) / (a - alpha)
 }
 
 // POST /api/weather/devices/:id/connect - Connect/disconnect device

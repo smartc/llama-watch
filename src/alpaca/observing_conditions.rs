@@ -9,9 +9,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams};
+use crate::weather::observation::WeatherProperty;
 use crate::weather::observing_conditions::{
-    ObservingConditionsDevice, WeatherDataAccessor, ObservingConditionsProperties,
-    get_sensor_description, is_property_supported, get_property_value,
+    ObservingConditionsDevice, WeatherDataAccessor, get_sensor_description, is_property_supported,
 };
 
 pub type ObservingConditionsState = Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>;
@@ -112,39 +112,29 @@ macro_rules! property_getter {
                 )).into_response();
             }
 
+            let property: WeatherProperty = $property;
+            let name = property.ascom_name().unwrap_or(property.label());
+
             // Check if property is supported
-            if !is_property_supported($property) {
+            let config = dev.get_config();
+            if !is_property_supported(&config, property) {
                 return Json(AlpacaResponse::<$return_type>::error(
                     params.client_transaction_i_d,
                     server_id,
                     ERROR_NOT_IMPLEMENTED,
-                    format!("Property '{}' is not implemented", $property),
+                    format!("Property '{}' is not implemented", name),
                 )).into_response();
             }
 
-            // Get observation data
-            let config = dev.get_config();
-            let obs = match state.weather_data.get_observation(&config).await {
-                Some(o) => o,
+            let readings = state.weather_data.readings(&config).await;
+            let value = match readings.get(&property) {
+                Some(reading) => reading.value,
                 None => {
                     return Json(AlpacaResponse::<$return_type>::error(
                         params.client_transaction_i_d,
                         server_id,
                         ERROR_INVALID_OPERATION,
-                        "No weather data available".to_string(),
-                    )).into_response();
-                }
-            };
-
-            let prev_obs = state.weather_data.get_previous_observation(&config).await;
-            let value = match get_property_value(&obs, $property, prev_obs.as_ref()) {
-                Some(v) => v,
-                None => {
-                    return Json(AlpacaResponse::<$return_type>::error(
-                        params.client_transaction_i_d,
-                        server_id,
-                        ERROR_NOT_IMPLEMENTED,
-                        format!("Property '{}' is not available", $property),
+                        format!("No data available for '{}'", name),
                     )).into_response();
                 }
             };
@@ -159,15 +149,15 @@ macro_rules! property_getter {
 }
 
 // Define all property getters
-property_getter!(get_dewpoint, ObservingConditionsProperties::DEW_POINT, f64);
-property_getter!(get_humidity, ObservingConditionsProperties::HUMIDITY, f64);
-property_getter!(get_pressure, ObservingConditionsProperties::PRESSURE, f64);
-property_getter!(get_rainrate, ObservingConditionsProperties::RAIN_RATE, f64);
-property_getter!(get_skybrightness, ObservingConditionsProperties::SKY_BRIGHTNESS, f64);
-property_getter!(get_temperature, ObservingConditionsProperties::TEMPERATURE, f64);
-property_getter!(get_winddirection, ObservingConditionsProperties::WIND_DIRECTION, f64);
-property_getter!(get_windgust, ObservingConditionsProperties::WIND_GUST, f64);
-property_getter!(get_windspeed, ObservingConditionsProperties::WIND_SPEED, f64);
+property_getter!(get_dewpoint, WeatherProperty::DewPoint, f64);
+property_getter!(get_humidity, WeatherProperty::Humidity, f64);
+property_getter!(get_pressure, WeatherProperty::Pressure, f64);
+property_getter!(get_rainrate, WeatherProperty::RainRate, f64);
+property_getter!(get_skybrightness, WeatherProperty::SkyBrightness, f64);
+property_getter!(get_temperature, WeatherProperty::Temperature, f64);
+property_getter!(get_winddirection, WeatherProperty::WindDirection, f64);
+property_getter!(get_windgust, WeatherProperty::WindGust, f64);
+property_getter!(get_windspeed, WeatherProperty::WindSpeed, f64);
 
 // Properties that are not implemented (will return error)
 pub async fn get_cloudcover(
@@ -350,16 +340,20 @@ pub async fn get_sensordescription(
     let server_id = dev.next_transaction_id();
 
     // Check if property is supported - if not, return NotImplementedException
-    if !is_property_supported(&params.sensor_name) {
-        return Json(AlpacaResponse::<String>::error(
-            params.client_transaction_i_d,
-            server_id,
-            ERROR_NOT_IMPLEMENTED,
-            format!("Property '{}' is not implemented", params.sensor_name),
-        )).into_response();
-    }
+    let config = dev.get_config();
+    let property = match WeatherProperty::from_ascom_name(&params.sensor_name) {
+        Some(p) if is_property_supported(&config, p) => p,
+        _ => {
+            return Json(AlpacaResponse::<String>::error(
+                params.client_transaction_i_d,
+                server_id,
+                ERROR_NOT_IMPLEMENTED,
+                format!("Property '{}' is not implemented", params.sensor_name),
+            )).into_response();
+        }
+    };
 
-    let description = get_sensor_description(&params.sensor_name);
+    let description = get_sensor_description(&config, property);
 
     Json(AlpacaResponse::success(
         description,
@@ -406,75 +400,48 @@ pub async fn get_timesincelastupdate(
     }
 
     let config = dev.get_config();
+    let readings = state.weather_data.readings(&config).await;
+    let now = chrono::Utc::now();
+    let age = |timestamp: chrono::DateTime<chrono::Utc>| {
+        now.signed_duration_since(timestamp).num_milliseconds() as f64 / 1000.0
+    };
 
-    // Special case: empty string means "time since most recent update of ANY sensor"
-    if params.sensor_name.is_empty() {
-        // Get the minimum time across all supported sensors (minimum = most recent)
-        let supported_sensors = vec![
-            ObservingConditionsProperties::DEW_POINT,
-            ObservingConditionsProperties::HUMIDITY,
-            ObservingConditionsProperties::PRESSURE,
-            ObservingConditionsProperties::RAIN_RATE,
-            ObservingConditionsProperties::SKY_BRIGHTNESS,
-            ObservingConditionsProperties::TEMPERATURE,
-            ObservingConditionsProperties::WIND_DIRECTION,
-            ObservingConditionsProperties::WIND_GUST,
-            ObservingConditionsProperties::WIND_SPEED,
-        ];
-
-        let mut min_time = None;
-        for sensor in supported_sensors {
-            if let Some(t) = state.weather_data.time_since_last_update(&config, sensor).await {
-                min_time = Some(min_time.map_or(t, |current| f64::min(current, t)));
-            }
-        }
-
-        let time_since = match min_time {
-            Some(t) => t,
-            None => {
+    // Empty string means "time since most recent update of ANY sensor"
+    let time_since = if params.sensor_name.is_empty() {
+        readings.iter()
+            .filter(|(p, _)| p.ascom_name().is_some())
+            .map(|(_, r)| r.timestamp)
+            .max()
+            .map(age)
+    } else {
+        // Check if property is supported - if not, return NotImplementedException
+        let property = match WeatherProperty::from_ascom_name(&params.sensor_name) {
+            Some(p) if is_property_supported(&config, p) => p,
+            _ => {
                 return Json(AlpacaResponse::<f64>::error(
                     params.client_transaction_i_d,
                     server_id,
-                    ERROR_INVALID_OPERATION,
-                    "No weather data available".to_string(),
+                    ERROR_NOT_IMPLEMENTED,
+                    format!("Property '{}' is not implemented", params.sensor_name),
                 )).into_response();
             }
         };
-
-        return Json(AlpacaResponse::success(
-            time_since,
-            params.client_transaction_i_d,
-            server_id,
-        )).into_response();
-    }
-
-    // Check if property is supported - if not, return NotImplementedException
-    if !is_property_supported(&params.sensor_name) {
-        return Json(AlpacaResponse::<f64>::error(
-            params.client_transaction_i_d,
-            server_id,
-            ERROR_NOT_IMPLEMENTED,
-            format!("Property '{}' is not implemented", params.sensor_name),
-        )).into_response();
-    }
-
-    let time_since = match state.weather_data.time_since_last_update(&config, &params.sensor_name).await {
-        Some(t) => t,
-        None => {
-            return Json(AlpacaResponse::<f64>::error(
-                params.client_transaction_i_d,
-                server_id,
-                ERROR_INVALID_OPERATION,
-                "No weather data available".to_string(),
-            )).into_response();
-        }
+        readings.get(&property).map(|r| age(r.timestamp))
     };
 
-    Json(AlpacaResponse::success(
-        time_since,
-        params.client_transaction_i_d,
-        server_id,
-    )).into_response()
+    match time_since {
+        Some(t) => Json(AlpacaResponse::success(
+            t,
+            params.client_transaction_i_d,
+            server_id,
+        )).into_response(),
+        None => Json(AlpacaResponse::<f64>::error(
+            params.client_transaction_i_d,
+            server_id,
+            ERROR_INVALID_OPERATION,
+            "No weather data available".to_string(),
+        )).into_response(),
+    }
 }
 
 // PUT /api/v1/observingconditions/{device}/refresh

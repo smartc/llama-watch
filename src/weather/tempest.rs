@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+
+use super::observation::{SharedWeatherStore, WeatherObservation, WeatherProperty, WeatherStore};
 
 /// Tempest observation data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,39 +106,33 @@ impl TempestObservation {
         self.rain_accumulation.max(0.0) * 60.0 / self.report_interval_minutes
     }
 
-    /// Calculate dew point from temperature and humidity
-    /// Using Magnus formula
-    pub fn calculate_dew_point(&self) -> f64 {
-        let a = 17.27;
-        let b = 237.7;
-        let alpha = ((a * self.temperature) / (b + self.temperature)) + (self.humidity / 100.0).ln();
-        (b * alpha) / (a - alpha)
+    /// Convert to the source-independent observation format
+    pub fn to_observation(&self) -> WeatherObservation {
+        let values = BTreeMap::from([
+            (WeatherProperty::Temperature, self.temperature),
+            (WeatherProperty::Humidity, self.humidity),
+            (WeatherProperty::Pressure, self.pressure),
+            (WeatherProperty::WindSpeed, self.wind_avg),
+            (WeatherProperty::WindGust, self.wind_gust),
+            (WeatherProperty::WindDirection, self.wind_direction),
+            (WeatherProperty::RainRate, self.rain_rate()),
+            (WeatherProperty::SkyBrightness, self.illuminance),
+            (WeatherProperty::SolarRadiation, self.solar_radiation),
+            (WeatherProperty::UvIndex, self.uv),
+        ]);
+        WeatherObservation::new(self.timestamp, values)
     }
-}
-
-/// Shared state for Tempest observations
-#[derive(Debug, Clone, Default)]
-pub struct TempestData {
-    pub observations: HashMap<String, TempestObservation>,
-    pub previous_observations: HashMap<String, TempestObservation>, // For rain rate calculation
 }
 
 /// Tempest UDP listener
 pub struct TempestListener {
     port: u16,
-    data: Arc<RwLock<TempestData>>,
+    store: SharedWeatherStore,
 }
 
 impl TempestListener {
-    pub fn new(port: u16) -> Self {
-        Self {
-            port,
-            data: Arc::new(RwLock::new(TempestData::default())),
-        }
-    }
-
-    pub fn get_data(&self) -> Arc<RwLock<TempestData>> {
-        self.data.clone()
+    pub fn new(port: u16, store: SharedWeatherStore) -> Self {
+        Self { port, store }
     }
 
     /// Start listening for UDP broadcasts
@@ -178,15 +173,10 @@ impl TempestListener {
                             debug!("Received Tempest observation from {}: temp={:.1}°C, humidity={:.0}%, wind={:.1}m/s",
                                 serial_number, observation.temperature, observation.humidity, observation.wind_avg);
 
-                            let mut data = self.data.write().await;
-
-                            // Save previous observation for rain rate calculation
-                            let prev_obs = data.observations.get(&serial_number).cloned();
-                            if let Some(prev) = prev_obs {
-                                data.previous_observations.insert(serial_number.clone(), prev);
-                            }
-
-                            data.observations.insert(serial_number, observation);
+                            self.store.write().await.update(
+                                WeatherStore::tempest_key(&serial_number),
+                                observation.to_observation(),
+                            );
                         }
                         Err(e) => {
                             warn!("Failed to parse Tempest observation: {}", e);

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::weather::observation::WeatherProperty;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ComparisonOperator {
@@ -330,6 +332,23 @@ pub struct WeatherSafetyThresholds {
     pub wind_gust: Option<ThresholdConfig>,
     #[serde(default)]
     pub rain_rate: Option<ThresholdConfig>,
+}
+
+impl WeatherSafetyThresholds {
+    /// The thresholds that are configured, paired with the property they apply to
+    pub fn configured(&self) -> Vec<(WeatherProperty, &ThresholdConfig)> {
+        [
+            (WeatherProperty::Temperature, &self.temperature),
+            (WeatherProperty::Humidity, &self.humidity),
+            (WeatherProperty::SkyBrightness, &self.sky_brightness),
+            (WeatherProperty::WindSpeed, &self.wind_speed),
+            (WeatherProperty::WindGust, &self.wind_gust),
+            (WeatherProperty::RainRate, &self.rain_rate),
+        ]
+        .into_iter()
+        .filter_map(|(property, threshold)| threshold.as_ref().map(|t| (property, t)))
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

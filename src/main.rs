@@ -23,7 +23,7 @@ use config::load_config;
 use logging::DebugLogger;
 use monitors::MonitorState;
 use switches::SwitchManager;
-use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor};
+use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor, WeatherStore};
 use web::handlers::WebState;
 use std::collections::HashMap;
 
@@ -73,8 +73,8 @@ async fn main() -> Result<()> {
     let shared_monitor_state = Arc::new(RwLock::new(monitor_state));
 
     // Initialize Tempest UDP listener
-    let tempest_listener = Arc::new(TempestListener::new(config.tempest_udp_port));
-    let tempest_data = tempest_listener.get_data();
+    let weather_store = Arc::new(RwLock::new(WeatherStore::default()));
+    let tempest_listener = Arc::new(TempestListener::new(config.tempest_udp_port, weather_store.clone()));
 
     // Start Tempest listener task
     let listener_clone = tempest_listener.clone();
@@ -97,11 +97,11 @@ async fn main() -> Result<()> {
     let oc_devices_shared = Arc::new(RwLock::new(oc_devices));
 
     // Create weather data accessor
-    let weather_data_accessor = Arc::new(WeatherDataAccessor::new(tempest_data.clone()));
+    let weather_data_accessor = Arc::new(WeatherDataAccessor::new(weather_store.clone()));
 
     // Initialize weather monitor manager for safety threshold monitoring
     let mut weather_monitor_manager = WeatherMonitorManager::new();
-    weather_monitor_manager.initialize(&config.weather_devices, tempest_data.clone()).await;
+    weather_monitor_manager.initialize(&config.weather_devices, weather_data_accessor.clone()).await;
     let shared_weather_monitors = Arc::new(RwLock::new(weather_monitor_manager));
     info!("Weather safety monitors initialized");
 
@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
         safety_monitor: safety_monitor.clone(),
         oc_devices: oc_devices_shared.clone(),
         weather_monitors: shared_weather_monitors.clone(),
-        tempest_data: tempest_data.clone(),
+        weather_data: weather_data_accessor.clone(),
     });
 
     // Start periodic status logging task

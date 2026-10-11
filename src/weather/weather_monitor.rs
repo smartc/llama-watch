@@ -5,9 +5,8 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::config::models::{ComparisonOperator, ThresholdConfig, WeatherDeviceConfig, WeatherSafetyThresholds};
-use super::tempest::{TempestData, TempestObservation};
-use super::observing_conditions::{ObservingConditionsProperties, get_property_value};
+use crate::config::models::{ThresholdConfig, WeatherDeviceConfig};
+use super::observing_conditions::WeatherDataAccessor;
 
 #[derive(Debug, Clone)]
 pub struct WeatherMonitorStatus {
@@ -37,12 +36,12 @@ pub struct MeasurementStatus {
 /// Individual weather monitor
 pub struct WeatherMonitor {
     config: WeatherDeviceConfig,
-    tempest_data: Arc<RwLock<TempestData>>,
+    weather_data: Arc<WeatherDataAccessor>,
     status: Arc<RwLock<WeatherMonitorStatus>>,
 }
 
 impl WeatherMonitor {
-    pub fn new(config: WeatherDeviceConfig, tempest_data: Arc<RwLock<TempestData>>) -> Self {
+    pub fn new(config: WeatherDeviceConfig, weather_data: Arc<WeatherDataAccessor>) -> Self {
         let status = WeatherMonitorStatus {
             device_number: config.device_number,
             name: config.name.clone(),
@@ -60,7 +59,7 @@ impl WeatherMonitor {
 
         Self {
             config,
-            tempest_data,
+            weather_data,
             status: Arc::new(RwLock::new(status)),
         }
     }
@@ -86,41 +85,15 @@ impl WeatherMonitor {
     }
 
     async fn check_safety(&self) -> anyhow::Result<()> {
-        use crate::config::models::WeatherDataSource;
-
         // Skip if safety thresholds not configured or disabled
         let thresholds = match &self.config.safety_thresholds {
             Some(t) if t.enabled => t,
             _ => return Ok(()), // No thresholds configured
         };
 
-        // Get current observation
-        let data = self.tempest_data.read().await;
-        let (current_obs, previous_obs) = match &self.config.source {
-            WeatherDataSource::Tempest { serial_number } => {
-                let current = if let Some(sn) = serial_number {
-                    data.observations.get(sn).cloned()
-                } else {
-                    data.observations.values().next().cloned()
-                };
-
-                let previous = if let Some(sn) = serial_number {
-                    data.previous_observations.get(sn).cloned()
-                } else {
-                    data.previous_observations.values().next().cloned()
-                };
-
-                (current, previous)
-            }
-            WeatherDataSource::WeatherUnderground { .. } => {
-                // TODO: Implement Weather Underground
-                return Ok(());
-            }
-        };
-        drop(data); // Release lock
-
-        let obs = match current_obs {
-            Some(obs) => obs,
+        let readings = self.weather_data.readings(&self.config).await;
+        let latest_update = match readings.values().map(|r| r.timestamp).max() {
+            Some(ts) => ts,
             None => {
                 // No data yet
                 let mut status = self.status.write().await;
@@ -134,7 +107,7 @@ impl WeatherMonitor {
         // timeout_seconds == 0: timeout disabled
         // timeout_seconds < 0: timeout ignored completely
         let now = Utc::now();
-        let time_since_update = (now - obs.timestamp).num_seconds();
+        let time_since_update = (now - latest_update).num_seconds();
         if thresholds.timeout_seconds > 0 && time_since_update > thresholds.timeout_seconds {
             let mut status = self.status.write().await;
             status.is_safe = false;
@@ -149,107 +122,24 @@ impl WeatherMonitor {
         let mut measurements = HashMap::new();
         let mut all_safe = true;
 
-        let obs_time = obs.timestamp;
-
-        // Temperature
-        if let Some(threshold) = &thresholds.temperature {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::TEMPERATURE, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
+        for (property, threshold) in thresholds.configured() {
+            if let Some(reading) = readings.get(&property) {
+                let is_safe = check_threshold(reading.value, threshold);
                 all_safe = all_safe && is_safe;
-                measurements.insert("Temperature".to_string(), MeasurementStatus {
-                    name: "Temperature".to_string(),
-                    value,
+                measurements.insert(property.label().to_string(), MeasurementStatus {
+                    name: property.label().to_string(),
+                    value: reading.value,
                     threshold: threshold.threshold,
                     is_safe,
                     timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
-                });
-            }
-        }
-
-        // Humidity
-        if let Some(threshold) = &thresholds.humidity {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::HUMIDITY, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert("Humidity".to_string(), MeasurementStatus {
-                    name: "Humidity".to_string(),
-                    value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
-                });
-            }
-        }
-
-        // Sky Brightness
-        if let Some(threshold) = &thresholds.sky_brightness {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::SKY_BRIGHTNESS, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert("Sky Brightness".to_string(), MeasurementStatus {
-                    name: "Sky Brightness".to_string(),
-                    value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
-                });
-            }
-        }
-
-        // Wind Speed
-        if let Some(threshold) = &thresholds.wind_speed {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::WIND_SPEED, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert("Wind Speed".to_string(), MeasurementStatus {
-                    name: "Wind Speed".to_string(),
-                    value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
-                });
-            }
-        }
-
-        // Wind Gust
-        if let Some(threshold) = &thresholds.wind_gust {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::WIND_GUST, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert("Wind Gust".to_string(), MeasurementStatus {
-                    name: "Wind Gust".to_string(),
-                    value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
-                });
-            }
-        }
-
-        // Rain Rate
-        if let Some(threshold) = &thresholds.rain_rate {
-            if let Some(value) = get_property_value(&obs, ObservingConditionsProperties::RAIN_RATE, previous_obs.as_ref()) {
-                let is_safe = check_threshold(value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert("Rain Rate".to_string(), MeasurementStatus {
-                    name: "Rain Rate".to_string(),
-                    value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(obs_time),
+                    last_update: Some(reading.timestamp),
                 });
             }
         }
 
         // Update status with hold time logic
         let mut status = self.status.write().await;
-        status.last_update = Some(obs.timestamp);
+        status.last_update = Some(latest_update);
         status.error = None;
         status.measurements = measurements;
 
@@ -328,14 +218,14 @@ impl WeatherMonitorManager {
     pub async fn initialize(
         &mut self,
         configs: &HashMap<u32, WeatherDeviceConfig>,
-        tempest_data: Arc<RwLock<TempestData>>,
+        weather_data: Arc<WeatherDataAccessor>,
     ) {
         // Create monitors for devices with safety thresholds enabled
         for (device_number, config) in configs {
             if config.enabled {
                 if let Some(thresholds) = &config.safety_thresholds {
                     if thresholds.enabled {
-                        let monitor = Arc::new(WeatherMonitor::new(config.clone(), tempest_data.clone()));
+                        let monitor = Arc::new(WeatherMonitor::new(config.clone(), weather_data.clone()));
                         let handle = monitor.clone().start().await;
                         self.monitors.insert(*device_number, monitor);
                         self.tasks.insert(*device_number, handle);
