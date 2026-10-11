@@ -47,6 +47,20 @@ where
     }
 }
 
+/// Deserialize an Alpaca boolean parameter: "True"/"False" in any letter case.
+/// Anything else is rejected, which AlpacaForm turns into HTTP 400.
+pub(crate) fn deserialize_alpaca_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_ascii_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(serde::de::Error::custom(format!("expected True or False, got '{}'", s))),
+    }
+}
+
 /// Non-standard structured comments for safety status details
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -124,14 +138,25 @@ pub struct PutRequest {
     pub client_transaction_i_d: u32,
 }
 
-/// PUT request for connected property (case-insensitive per ASCOM spec)
+/// Standard PUT form parameters. Alpaca PUT parameter names are case-sensitive
+/// (only GET query names are case-insensitive), so a wrongly cased ClientID or
+/// ClientTransactionID is ignored rather than echoed back.
+#[derive(Debug, Deserialize)]
+pub struct PutParams {
+    #[serde(default, rename = "ClientID")]
+    pub client_i_d: u32,
+    #[serde(default, rename = "ClientTransactionID")]
+    pub client_transaction_i_d: u32,
+}
+
+/// PUT request for connected property. ClientID/ClientTransactionID names are
+/// case-sensitive like all PUT parameters; Connected also accepts other casings
+/// for compatibility with lenient clients.
 #[derive(Debug, Deserialize)]
 pub struct ConnectedRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
-    #[serde(rename = "ClientID")]
+    #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
-    #[serde(rename = "ClientTransactionID")]
+    #[serde(default, rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
     #[serde(deserialize_with = "deserialize_bool_from_string", alias = "Connected", alias = "connected", alias = "CONNECTED")]
     #[serde(rename = "Connected")]

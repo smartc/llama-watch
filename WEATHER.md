@@ -51,7 +51,7 @@ For each measurement, the aggregate uses the first source in its order whose dat
 1. **fresh**: newer than **Stale After** (default 300 s), and
 2. **steady**: reporting without gaps for **Return After** (default 300 s), or since llama-watch started.
 
-So the aggregate stays on your preferred source while it keeps reporting. If that source drops out, the measurement falls back to the next one. When the preferred source recovers, it only takes over again once it has reported steadily for the Return After time, so an intermittent source can't make values bounce back and forth. If every source is stale, the most recent reading is still served so that safety timeouts apply to it.
+So the aggregate stays on your preferred source while it keeps reporting. A single missed reading doesn't count as dropping out: the last value is kept and simply gets older until the source reports again. If that source drops out, the measurement falls back to the next one. When the preferred source recovers, it only takes over again once it has reported steadily for the Return After time, so an intermittent source can't make values bounce back and forth. If every source is stale, the most recent reading is still served so that safety timeouts apply to it.
 
 Keep Stale After well above each source's report interval. Tempest reports every 60 s.
 

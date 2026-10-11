@@ -168,6 +168,19 @@ impl WeatherObservation {
         self.values.get(&property).copied()
     }
 
+    /// Keep values the previous observation had but this one lacks (a read that
+    /// failed this time, or a sensor the station briefly didn't report), with
+    /// their original measurement time, so they age normally instead of
+    /// disappearing until the next poll
+    fn carry_forward(&mut self, previous: &WeatherObservation) {
+        for (&property, &value) in &previous.values {
+            if !self.values.contains_key(&property) {
+                self.values.insert(property, value);
+                self.measured_at.insert(property, previous.measured_at(property));
+            }
+        }
+    }
+
     /// When a value was measured (the observation timestamp unless the station reported otherwise)
     pub fn measured_at(&self, property: WeatherProperty) -> DateTime<Utc> {
         self.measured_at.get(&property).copied().unwrap_or(self.timestamp)
@@ -259,7 +272,10 @@ impl WeatherStore {
         self.gap_limit = gap_limit;
     }
 
-    pub fn update(&mut self, key: String, observation: WeatherObservation) {
+    pub fn update(&mut self, key: String, mut observation: WeatherObservation) {
+        if let Some(previous) = self.observations.get(&key) {
+            observation.carry_forward(previous);
+        }
         let streaks = self.streaks.entry(key.clone()).or_default();
         for property in WeatherProperty::ALL {
             if observation.get(property).is_none() {
@@ -387,6 +403,34 @@ mod tests {
         ]);
         let obs = WeatherObservation::new(Utc::now(), values);
         assert_eq!(obs.get(WeatherProperty::DewPoint), Some(1.0));
+    }
+
+    #[test]
+    fn values_missing_from_an_update_are_kept_with_their_original_time() {
+        let t0 = Utc::now() - Duration::seconds(60);
+        let t1 = t0 + Duration::seconds(30);
+        let mut store = WeatherStore::default();
+        let key = WeatherStore::ecowitt_key("gw");
+        let source = WeatherDataSource::Ecowitt { host: "gw".into(), poll_interval_seconds: 30 };
+
+        store.update(key.clone(), WeatherObservation::new(t0, BTreeMap::from([
+            (WeatherProperty::Temperature, 5.0),
+            (WeatherProperty::CloudCover, 40.0),
+        ])));
+        // Next poll: the cloud cover read failed
+        store.update(key.clone(), WeatherObservation::new(t1, BTreeMap::from([
+            (WeatherProperty::Temperature, 6.0),
+        ])));
+
+        let obs = store.observation_for(&source).unwrap();
+        assert_eq!(obs.get(WeatherProperty::Temperature), Some(6.0));
+        assert_eq!(obs.measured_at(WeatherProperty::Temperature), t1);
+        assert_eq!(obs.get(WeatherProperty::CloudCover), Some(40.0));
+        assert_eq!(obs.measured_at(WeatherProperty::CloudCover), t0);
+
+        // The carried value doesn't count as new data for the steady-reporting streak
+        let streak = store.streaks[&key][&WeatherProperty::CloudCover];
+        assert_eq!(streak.last, t0);
     }
 
     #[test]

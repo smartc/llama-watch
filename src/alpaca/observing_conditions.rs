@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams};
+use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, PutParams, QueryParams};
 use crate::weather::observation::WeatherProperty;
 use crate::weather::observing_conditions::{ObservingConditionsDevice, WeatherDataAccessor};
 
@@ -383,7 +383,7 @@ pub async fn get_timesincelastupdate(
 pub async fn put_refresh(
     Path(device): Path<u32>,
     State(state): State<SharedObservingConditionsState>,
-    AlpacaForm(params): AlpacaForm<QueryParams>,
+    AlpacaForm(params): AlpacaForm<PutParams>,
 ) -> Response {
     let dev = match get_device(&state.devices, device).await {
         Ok(d) => d,
