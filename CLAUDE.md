@@ -188,8 +188,8 @@ This prevents brief UNSAFE blips when adding/removing monitors.
 - Future: Weather Underground API (structure exists, not implemented)
 
 **Property mapping:**
-- Tempest `illuminance` (lux) → `SkyBrightness` (mag/arcsec² using conversion formula)
-- Tempest `rain_accumulation` → `RainRate` (calculated from time-based changes)
+- Tempest `illuminance` (lux) → `SkyBrightness` (ASCOM defines SkyBrightness in lux; SkyQuality is mag/arcsec² and is not implemented)
+- Tempest `rain_accumulation` (rain during the report interval) → `RainRate` (scaled to mm/hour)
 
 ### Management API
 

@@ -777,9 +777,8 @@ pub async fn get_weather_status(
             let dew_point = calculate_dew_point(obs.temperature, obs.humidity);
             add_measurement("Dew Point", "Dew Point (°C)", dew_point);
 
-            // Convert illuminance to sky brightness (mag/arcsec²)
-            let sky_brightness = lux_to_sky_brightness(obs.illuminance);
-            add_measurement("Sky Brightness", "Sky Brightness (mag/arcsec²)", sky_brightness);
+            // ASCOM SkyBrightness is illuminance in lux
+            add_measurement("Sky Brightness", "Sky Brightness (lux)", obs.illuminance);
         }
 
         // Determine overall safety status
@@ -813,15 +812,6 @@ fn calculate_dew_point(temp_c: f64, humidity: f64) -> f64 {
     let b = 237.7;
     let alpha = ((a * temp_c) / (b + temp_c)) + (humidity / 100.0).ln();
     (b * alpha) / (a - alpha)
-}
-
-// Helper function to convert lux to sky brightness (mag/arcsec²)
-fn lux_to_sky_brightness(lux: f64) -> f64 {
-    if lux <= 0.0 {
-        return 22.0; // Very dark sky
-    }
-    // Empirical conversion: mag/arcsec² = 22.0 - 2.5 * log10(lux)
-    22.0 - 2.5 * lux.log10()
 }
 
 // POST /api/weather/devices/:id/connect - Connect/disconnect device

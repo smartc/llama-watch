@@ -165,7 +165,7 @@ impl ObservingConditionsProperties {
             Self::HUMIDITY,         // Direct
             Self::PRESSURE,         // Direct
             Self::RAIN_RATE,        // Calculated from accumulation
-            Self::SKY_BRIGHTNESS,   // Converted from illuminance
+            Self::SKY_BRIGHTNESS,   // Direct (illuminance, lux)
             Self::TEMPERATURE,      // Direct
             Self::WIND_DIRECTION,   // Direct
             Self::WIND_GUST,        // Direct
@@ -186,7 +186,7 @@ pub fn get_sensor_description(property: &str) -> String {
         ObservingConditionsProperties::RAIN_RATE =>
             "Rain rate from precipitation in the latest report interval".to_string(),
         ObservingConditionsProperties::SKY_BRIGHTNESS =>
-            "Sky brightness derived from illuminance sensor".to_string(),
+            "Sky brightness (illuminance, lux) from Tempest light sensor".to_string(),
         ObservingConditionsProperties::TEMPERATURE =>
             "Ambient air temperature from Tempest weather station".to_string(),
         ObservingConditionsProperties::WIND_DIRECTION =>
@@ -206,7 +206,7 @@ pub fn get_property_value(obs: &TempestObservation, property: &str, previous_obs
         ObservingConditionsProperties::HUMIDITY => Some(obs.humidity),
         ObservingConditionsProperties::PRESSURE => Some(obs.pressure),
         ObservingConditionsProperties::RAIN_RATE => Some(obs.rain_rate()),
-        ObservingConditionsProperties::SKY_BRIGHTNESS => Some(obs.calculate_sky_brightness()),
+        ObservingConditionsProperties::SKY_BRIGHTNESS => Some(obs.illuminance),
         ObservingConditionsProperties::TEMPERATURE => Some(obs.temperature),
         ObservingConditionsProperties::WIND_DIRECTION => Some(obs.wind_direction),
         ObservingConditionsProperties::WIND_GUST => Some(obs.wind_gust),

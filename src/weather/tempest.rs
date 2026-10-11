@@ -113,19 +113,6 @@ impl TempestObservation {
         let alpha = ((a * self.temperature) / (b + self.temperature)) + (self.humidity / 100.0).ln();
         (b * alpha) / (a - alpha)
     }
-
-    /// Convert illuminance (lux) to sky brightness (mag/arcsec^2)
-    /// This is an approximation - sky brightness in astronomical terms
-    /// Lower lux = darker sky = higher magnitude (better)
-    pub fn calculate_sky_brightness(&self) -> f64 {
-        if self.illuminance <= 0.0 {
-            return 22.0; // Very dark sky
-        }
-        // Approximate conversion: mag = 22 - 2.5 * log10(lux)
-        // This puts bright daylight (~100000 lux) at ~-10 mag/arcsec^2
-        // and very dark night (~0.001 lux) at ~22 mag/arcsec^2
-        22.0 - 2.5 * self.illuminance.log10()
-    }
 }
 
 /// Shared state for Tempest observations
