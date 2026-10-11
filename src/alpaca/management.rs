@@ -99,7 +99,9 @@ pub async fn get_configured_devices(
 
     // Add ObservingConditions devices
     let oc_devices = state.oc_devices.read().await;
-    for (device_number, device) in oc_devices.iter() {
+    let mut oc_devices: Vec<_> = oc_devices.iter().collect();
+    oc_devices.sort_by_key(|(number, _)| **number);
+    for (device_number, device) in oc_devices {
         devices.push(DeviceDescription {
             device_name: device.name.clone(),
             device_type: "ObservingConditions".to_string(),

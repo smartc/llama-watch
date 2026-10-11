@@ -23,9 +23,8 @@ use config::load_config;
 use logging::DebugLogger;
 use monitors::MonitorState;
 use switches::SwitchManager;
-use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor};
+use weather::{TempestListener, WeatherDataAccessor, WeatherService, WeatherStore};
 use web::handlers::WebState;
-use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -73,8 +72,8 @@ async fn main() -> Result<()> {
     let shared_monitor_state = Arc::new(RwLock::new(monitor_state));
 
     // Initialize Tempest UDP listener
-    let tempest_listener = Arc::new(TempestListener::new(config.tempest_udp_port));
-    let tempest_data = tempest_listener.get_data();
+    let weather_store = Arc::new(RwLock::new(WeatherStore::default()));
+    let tempest_listener = Arc::new(TempestListener::new(config.tempest_udp_port, weather_store.clone()));
 
     // Start Tempest listener task
     let listener_clone = tempest_listener.clone();
@@ -85,25 +84,16 @@ async fn main() -> Result<()> {
     });
     info!("🌤️  Tempest UDP listener started on port {}", config.tempest_udp_port);
 
-    // Create ObservingConditions devices from configuration
-    let mut oc_devices = HashMap::new();
-    for (device_number, device_config) in &config.weather_devices {
-        if device_config.enabled {
-            let device = Arc::new(ObservingConditionsDevice::new(device_config.clone()));
-            oc_devices.insert(*device_number, device);
-            info!("Created ObservingConditions device {}: {}", device_number, device_config.name);
-        }
-    }
-    let oc_devices_shared = Arc::new(RwLock::new(oc_devices));
-
-    // Create weather data accessor
-    let weather_data_accessor = Arc::new(WeatherDataAccessor::new(tempest_data.clone()));
-
-    // Initialize weather monitor manager for safety threshold monitoring
-    let mut weather_monitor_manager = WeatherMonitorManager::new();
-    weather_monitor_manager.initialize(&config.weather_devices, tempest_data.clone()).await;
-    let shared_weather_monitors = Arc::new(RwLock::new(weather_monitor_manager));
-    info!("Weather safety monitors initialized");
+    // Create ObservingConditions devices, weather safety monitors and polled
+    // weather sources from configuration
+    let shared_config = Arc::new(RwLock::new(config.clone()));
+    let weather_data_accessor = Arc::new(WeatherDataAccessor::new(weather_store.clone(), shared_config.clone()));
+    let weather_service = Arc::new(WeatherService::new(weather_data_accessor.clone()));
+    weather_service.apply_config().await;
+    weather_service.spawn_source_watch();
+    let oc_devices_shared = weather_service.devices.clone();
+    let shared_weather_monitors = weather_service.monitors.clone();
+    info!("Weather devices and safety monitors initialized");
 
     let location = config.location.clone();
     let logging_enabled = config.logging_enabled;
@@ -172,14 +162,12 @@ async fn main() -> Result<()> {
 
     // Create web state for configuration management
     let web_state = Arc::new(WebState {
-        config: Arc::new(RwLock::new(config)),
+        config: shared_config.clone(),
         monitor_state: shared_monitor_state.clone(),
         switch_manager: switch_manager.clone(),
         debug_logger: debug_logger.clone(),
         safety_monitor: safety_monitor.clone(),
-        oc_devices: oc_devices_shared.clone(),
-        weather_monitors: shared_weather_monitors.clone(),
-        tempest_data: tempest_data.clone(),
+        weather: weather_service.clone(),
     });
 
     // Start periodic status logging task

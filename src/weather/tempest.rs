@@ -1,12 +1,13 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+
+use super::observation::{SharedWeatherStore, WeatherObservation, WeatherProperty, WeatherStore};
 
 /// Tempest observation data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,9 +24,10 @@ pub struct TempestObservation {
     pub illuminance: f64,      // lux
     pub uv: f64,               // index
     pub solar_radiation: f64,  // W/m^2
-    pub rain_accumulation: f64, // mm
+    pub rain_accumulation: f64, // mm fallen during the report interval (not a running total)
     pub precipitation_type: u8, // 0=none, 1=rain, 2=hail, 3=rain+hail
     pub battery: f64,          // volts
+    pub report_interval_minutes: f64,
 }
 
 /// UDP message types from Tempest
@@ -94,70 +96,43 @@ impl TempestObservation {
             rain_accumulation: obs[12].as_f64().unwrap_or(0.0),
             precipitation_type: obs[13].as_u64().unwrap_or(0) as u8,
             battery: obs[16].as_f64().unwrap_or(0.0),
+            report_interval_minutes: obs[17].as_f64().filter(|m| *m > 0.0).unwrap_or(1.0),
         })
     }
 
-    /// Calculate rain rate in mm/hour based on accumulation over time
-    pub fn calculate_rain_rate(&self, previous_obs: Option<&TempestObservation>) -> f64 {
-        if let Some(prev) = previous_obs {
-            let duration_hours = (self.timestamp - prev.timestamp).num_seconds() as f64 / 3600.0;
-            if duration_hours > 0.0 && duration_hours < 1.0 {
-                // Only calculate if observations are within 1 hour
-                let accumulation = self.rain_accumulation - prev.rain_accumulation;
-                if accumulation >= 0.0 {
-                    return accumulation / duration_hours;
-                }
-            }
-        }
-        0.0 // No previous observation or too far apart
+    /// Rain rate in mm/hour. obs[12] is the rain that fell during the report
+    /// interval (normally one minute), so scale it up to an hourly rate.
+    pub fn rain_rate(&self) -> f64 {
+        self.rain_accumulation.max(0.0) * 60.0 / self.report_interval_minutes
     }
 
-    /// Calculate dew point from temperature and humidity
-    /// Using Magnus formula
-    pub fn calculate_dew_point(&self) -> f64 {
-        let a = 17.27;
-        let b = 237.7;
-        let alpha = ((a * self.temperature) / (b + self.temperature)) + (self.humidity / 100.0).ln();
-        (b * alpha) / (a - alpha)
+    /// Convert to the source-independent observation format
+    pub fn to_observation(&self) -> WeatherObservation {
+        let values = BTreeMap::from([
+            (WeatherProperty::Temperature, self.temperature),
+            (WeatherProperty::Humidity, self.humidity),
+            (WeatherProperty::Pressure, self.pressure),
+            (WeatherProperty::WindSpeed, self.wind_avg),
+            (WeatherProperty::WindGust, self.wind_gust),
+            (WeatherProperty::WindDirection, self.wind_direction),
+            (WeatherProperty::RainRate, self.rain_rate()),
+            (WeatherProperty::SkyBrightness, self.illuminance),
+            (WeatherProperty::SolarRadiation, self.solar_radiation),
+            (WeatherProperty::UvIndex, self.uv),
+        ]);
+        WeatherObservation::new(self.timestamp, values)
     }
-
-    /// Convert illuminance (lux) to sky brightness (mag/arcsec^2)
-    /// This is an approximation - sky brightness in astronomical terms
-    /// Lower lux = darker sky = higher magnitude (better)
-    pub fn calculate_sky_brightness(&self) -> f64 {
-        if self.illuminance <= 0.0 {
-            return 22.0; // Very dark sky
-        }
-        // Approximate conversion: mag = 22 - 2.5 * log10(lux)
-        // This puts bright daylight (~100000 lux) at ~-10 mag/arcsec^2
-        // and very dark night (~0.001 lux) at ~22 mag/arcsec^2
-        22.0 - 2.5 * self.illuminance.log10()
-    }
-}
-
-/// Shared state for Tempest observations
-#[derive(Debug, Clone, Default)]
-pub struct TempestData {
-    pub observations: HashMap<String, TempestObservation>,
-    pub previous_observations: HashMap<String, TempestObservation>, // For rain rate calculation
 }
 
 /// Tempest UDP listener
 pub struct TempestListener {
     port: u16,
-    data: Arc<RwLock<TempestData>>,
+    store: SharedWeatherStore,
 }
 
 impl TempestListener {
-    pub fn new(port: u16) -> Self {
-        Self {
-            port,
-            data: Arc::new(RwLock::new(TempestData::default())),
-        }
-    }
-
-    pub fn get_data(&self) -> Arc<RwLock<TempestData>> {
-        self.data.clone()
+    pub fn new(port: u16, store: SharedWeatherStore) -> Self {
+        Self { port, store }
     }
 
     /// Start listening for UDP broadcasts
@@ -198,15 +173,10 @@ impl TempestListener {
                             debug!("Received Tempest observation from {}: temp={:.1}°C, humidity={:.0}%, wind={:.1}m/s",
                                 serial_number, observation.temperature, observation.humidity, observation.wind_avg);
 
-                            let mut data = self.data.write().await;
-
-                            // Save previous observation for rain rate calculation
-                            let prev_obs = data.observations.get(&serial_number).cloned();
-                            if let Some(prev) = prev_obs {
-                                data.previous_observations.insert(serial_number.clone(), prev);
-                            }
-
-                            data.observations.insert(serial_number, observation);
+                            self.store.write().await.update(
+                                WeatherStore::tempest_key(&serial_number),
+                                observation.to_observation(),
+                            );
                         }
                         Err(e) => {
                             warn!("Failed to parse Tempest observation: {}", e);
@@ -230,5 +200,36 @@ impl TempestListener {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn obs_array(rain_mm: f64, interval_min: u64) -> Vec<serde_json::Value> {
+        vec![
+            json!(1700000000), json!(0.1), json!(1.2), json!(2.3), json!(180), json!(3),
+            json!(1013.2), json!(12.5), json!(80), json!(0), json!(0.0), json!(0),
+            json!(rain_mm), json!(1), json!(0), json!(0), json!(2.6), json!(interval_min),
+        ]
+    }
+
+    #[test]
+    fn rain_rate_scales_per_interval_amount_to_hourly() {
+        let obs = TempestObservation::from_obs_array("ST-1".into(), &obs_array(0.1, 1)).unwrap();
+        assert!((obs.rain_rate() - 6.0).abs() < 1e-9);
+
+        let obs = TempestObservation::from_obs_array("ST-1".into(), &obs_array(0.5, 5)).unwrap();
+        assert!((obs.rain_rate() - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn steady_rain_is_not_reported_as_dry() {
+        // Two identical one-minute amounts used to produce a rate of zero
+        let a = TempestObservation::from_obs_array("ST-1".into(), &obs_array(0.2, 1)).unwrap();
+        let b = TempestObservation::from_obs_array("ST-1".into(), &obs_array(0.2, 1)).unwrap();
+        assert!(a.rain_rate() > 0.0 && b.rain_rate() > 0.0);
     }
 }

@@ -44,7 +44,10 @@
       "id": "cloud_agreement",
       "name": "Cloud Sensor Agreement",
       "description": "Both cloud sensors must agree it is cloudy before reporting unsafe",
-      "members": ["cloud_sensor_1", "cloud_sensor_2"],
+      "members": [
+        "cloud_sensor_1",
+        "cloud_sensor_2"
+      ],
       "logic": "all",
       "enabled": true
     },
@@ -52,8 +55,15 @@
       "id": "multi_sensor_warning",
       "name": "Multi-Sensor Warning",
       "description": "At least 2 of 3 sensors must report unsafe",
-      "members": ["cloud_sensor_1", "cloud_sensor_2"],
-      "logic": {"min_of": {"count": 2}},
+      "members": [
+        "cloud_sensor_1",
+        "cloud_sensor_2"
+      ],
+      "logic": {
+        "min_of": {
+          "count": 2
+        }
+      },
       "enabled": true
     }
   },
@@ -62,7 +72,10 @@
       "id": "is_cloudy",
       "name": "Is Cloudy",
       "description": "Cloud detection using ANY of the cloud sensors",
-      "sources": ["cloud_sensor_1", "cloud_sensor_2"],
+      "sources": [
+        "cloud_sensor_1",
+        "cloud_sensor_2"
+      ],
       "logic": "any",
       "timeout_seconds": 300,
       "hold_time_seconds": 300,
@@ -72,7 +85,10 @@
       "id": "both_cloudy",
       "name": "Both Cloudy",
       "description": "Cloud detection only when ALL sensors detect clouds",
-      "sources": ["cloud_sensor_1", "cloud_sensor_2"],
+      "sources": [
+        "cloud_sensor_1",
+        "cloud_sensor_2"
+      ],
       "logic": "all",
       "timeout_seconds": 300,
       "hold_time_seconds": 60,
@@ -80,8 +96,8 @@
     }
   },
   "weather_devices": {
-    "0": {
-      "device_number": 0,
+    "1": {
+      "device_number": 1,
       "name": "Tempest Weather Station",
       "description": "WeatherFlow Tempest all-in-one weather station",
       "source": {
@@ -90,35 +106,117 @@
       },
       "enabled": true,
       "auto_connect": true,
-      "safety_thresholds": {
-        "enabled": true,
-        "timeout_seconds": 300,
-        "hold_time_seconds": 60,
-        "temperature": {
-          "threshold": -10.0,
-          "operator": "lessthan",
-          "safe_when_true": false
-        },
-        "humidity": {
-          "threshold": 85.0,
-          "operator": "greaterthan",
-          "safe_when_true": false
-        },
-        "wind_speed": {
-          "threshold": 15.0,
-          "operator": "greaterthan",
-          "safe_when_true": false
-        },
-        "wind_gust": {
-          "threshold": 20.0,
-          "operator": "greaterthan",
-          "safe_when_true": false
-        },
-        "rain_rate": {
-          "threshold": 0.1,
-          "operator": "greaterthan",
-          "safe_when_true": false
-        }
+      "expose_device": true
+    },
+    "2": {
+      "device_number": 2,
+      "name": "Ecowitt GW3000",
+      "description": "Ecowitt gateway polled over its local HTTP API",
+      "source": {
+        "type": "ecowitt",
+        "host": "ecowitt.local",
+        "poll_interval_seconds": 30
+      },
+      "enabled": true,
+      "auto_connect": true,
+      "expose_device": true
+    },
+    "3": {
+      "device_number": 3,
+      "name": "Sky Conditions",
+      "description": "ASCOM Alpaca ObservingConditions device (sky quality and cloud sensor)",
+      "source": {
+        "type": "alpaca",
+        "host": "skycon.local",
+        "port": 11111,
+        "device_number": 0,
+        "poll_interval_seconds": 30,
+        "properties": [
+          "temperature",
+          "sky_brightness",
+          "sky_quality",
+          "sky_temperature",
+          "cloud_cover"
+        ]
+      },
+      "enabled": true,
+      "auto_connect": true,
+      "expose_device": true
+    },
+    "4": {
+      "device_number": 4,
+      "name": "Weather Underground",
+      "description": "Personal weather station via the Weather Underground PWS API",
+      "source": {
+        "type": "weatherunderground",
+        "station_id": "YOUR_STATION_ID",
+        "api_key": "YOUR_PWS_API_KEY",
+        "poll_interval_seconds": 120
+      },
+      "enabled": false,
+      "auto_connect": true,
+      "expose_device": true
+    }
+  },
+  "weather_aggregate": {
+    "name": "LLAMA Weather",
+    "description": "Best available reading from each weather source",
+    "auto_connect": true,
+    "stale_after_seconds": 300,
+    "return_after_seconds": 300,
+    "source_priority": [],
+    "property_sources": {
+      "wind_speed": [
+        2,
+        1
+      ],
+      "wind_gust": [
+        2,
+        1
+      ],
+      "wind_direction": [
+        2,
+        1
+      ],
+      "temperature": [
+        3,
+        2,
+        1
+      ]
+    },
+    "safety_thresholds": {
+      "enabled": true,
+      "timeout_seconds": 300,
+      "hold_time_seconds": 60,
+      "temperature": {
+        "threshold": -10.0,
+        "operator": "lessthan",
+        "safe_when_true": false
+      },
+      "humidity": {
+        "threshold": 85.0,
+        "operator": "greaterthan",
+        "safe_when_true": false
+      },
+      "wind_speed": {
+        "threshold": 15.0,
+        "operator": "greaterthan",
+        "safe_when_true": false
+      },
+      "wind_gust": {
+        "threshold": 20.0,
+        "operator": "greaterthan",
+        "safe_when_true": false
+      },
+      "rain_rate": {
+        "threshold": 0.1,
+        "operator": "greaterthan",
+        "safe_when_true": false
+      },
+      "cloud_cover": {
+        "threshold": 50.0,
+        "operator": "greaterthan",
+        "safe_when_true": false
       }
     }
   },

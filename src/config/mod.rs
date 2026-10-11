@@ -20,8 +20,20 @@ pub async fn load_config() -> Result<AppConfig> {
         .await
         .context("Failed to read config file")?;
 
-    let config: AppConfig = serde_json::from_str(&content)
+    let mut config: AppConfig = serde_json::from_str(&content)
         .context("Failed to parse config file")?;
+
+    if config.migrate() {
+        let backup = format!("{}.pre-weather-aggregate.bak", CONFIG_FILE);
+        fs::write(&backup, &content)
+            .await
+            .context("Failed to back up config before migration")?;
+        save_config(&config).await?;
+        tracing::info!(
+            "Migrated weather devices to the aggregate device layout (previous config saved to {})",
+            backup
+        );
+    }
 
     config.validate()
         .context("Config validation failed")?;

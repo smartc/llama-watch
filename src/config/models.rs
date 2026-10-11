@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::weather::observation::WeatherProperty;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ComparisonOperator {
@@ -126,7 +128,9 @@ pub struct AppConfig {
     #[serde(default)]
     pub alpaca_monitors: HashMap<String, AlpacaMonitorConfig>,
     #[serde(default)]
-    pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Key is device_number
+    pub weather_devices: HashMap<u32, WeatherDeviceConfig>, // Weather sources, key is device_number (>= 1)
+    #[serde(default)]
+    pub weather_aggregate: Option<WeatherAggregateConfig>, // Aggregate ObservingConditions device 0
     #[serde(default)]
     pub monitor_groups: HashMap<String, MonitorGroupConfig>, // Named groups with custom logic
     #[serde(default)]
@@ -160,6 +164,7 @@ impl AppConfig {
             mqtt_monitors: HashMap::new(),
             alpaca_monitors: HashMap::new(),
             weather_devices: HashMap::new(),
+            weather_aggregate: Some(WeatherAggregateConfig::default()),
             monitor_groups: HashMap::new(),
             switches: HashMap::new(),
             switch_device: SwitchDeviceConfig::default(),
@@ -172,6 +177,34 @@ impl AppConfig {
         }
     }
 
+    /// Upgrade configs written before the aggregate weather device existed.
+    /// The old device 0 becomes a source with the next free number, and the new
+    /// aggregate device 0 takes over its name and safety thresholds so ASCOM
+    /// clients and safety behaviour are unchanged. Returns true if anything changed.
+    pub fn migrate(&mut self) -> bool {
+        if self.weather_aggregate.is_some() {
+            return false;
+        }
+
+        let mut aggregate = WeatherAggregateConfig::default();
+        if let Some(mut device) = self.weather_devices.remove(&0) {
+            aggregate.name = device.name.clone();
+            aggregate.description = device.description.clone();
+            aggregate.auto_connect = device.auto_connect;
+            aggregate.safety_thresholds = device.safety_thresholds.take();
+
+            device.device_number = self.next_weather_device_number();
+            self.weather_devices.insert(device.device_number, device);
+        }
+        self.weather_aggregate = Some(aggregate);
+        true
+    }
+
+    /// Lowest unused weather source number (0 is the aggregate device)
+    pub fn next_weather_device_number(&self) -> u32 {
+        (1..).find(|n| !self.weather_devices.contains_key(n)).unwrap_or(1)
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         // Validate that all MQTT monitors reference valid servers
         for monitor in self.mqtt_monitors.values() {
@@ -180,6 +213,84 @@ impl AppConfig {
                     "MQTT monitor '{}' references non-existent server '{}'",
                     monitor.id, monitor.server_id
                 ));
+            }
+        }
+
+        for (number, device) in &self.weather_devices {
+            if *number == 0 {
+                return Err(anyhow::anyhow!(
+                    "Weather device '{}' uses device number 0, which is reserved for the aggregate device",
+                    device.name
+                ));
+            }
+            if device.device_number != *number {
+                return Err(anyhow::anyhow!(
+                    "Weather device '{}' is stored under number {} but has device_number {}",
+                    device.name, number, device.device_number
+                ));
+            }
+            let polled = match &device.source {
+                WeatherDataSource::Ecowitt { host, poll_interval_seconds } => Some((host, *poll_interval_seconds)),
+                WeatherDataSource::Alpaca { host, poll_interval_seconds, .. } => Some((host, *poll_interval_seconds)),
+                _ => None,
+            };
+            if let Some((host, poll_interval_seconds)) = polled {
+                if host.trim().is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' has no host", device.name
+                    ));
+                }
+                if poll_interval_seconds < 5 {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' poll interval must be at least 5 seconds", device.name
+                    ));
+                }
+            }
+            if let WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds, pressure_altitude_m } = &device.source {
+                if pressure_altitude_m.is_some_and(|a| !(0.0..=9000.0).contains(&a)) {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' pressure altitude must be between 0 and 9000 m", device.name
+                    ));
+                }
+                if station_id.trim().is_empty() || api_key.trim().is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' needs a Weather Underground station ID and API key", device.name
+                    ));
+                }
+                if *poll_interval_seconds < 60 {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' poll interval must be at least 60 seconds (Weather Underground allows 1500 calls/day)",
+                        device.name
+                    ));
+                }
+            }
+            if let WeatherDataSource::Alpaca { properties, .. } = &device.source {
+                if properties.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' has no properties selected", device.name
+                    ));
+                }
+                if let Some(p) = properties.iter().find(|p| p.ascom_name().is_none()) {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}': {} is not an ASCOM ObservingConditions property",
+                        device.name, p.label()
+                    ));
+                }
+            }
+        }
+
+        if let Some(aggregate) = &self.weather_aggregate {
+            if aggregate.stale_after_seconds == 0 {
+                return Err(anyhow::anyhow!("Aggregate weather device stale_after_seconds must be at least 1"));
+            }
+            let referenced = aggregate.source_priority.iter()
+                .chain(aggregate.property_sources.values().flatten());
+            for number in referenced {
+                if !self.weather_devices.contains_key(number) {
+                    return Err(anyhow::anyhow!(
+                        "Aggregate weather device references non-existent weather source {}", number
+                    ));
+                }
             }
         }
 
@@ -195,9 +306,11 @@ impl AppConfig {
             for member_id in &group.members {
                 let mqtt_exists = self.mqtt_monitors.contains_key(member_id);
                 let alpaca_exists = self.alpaca_monitors.contains_key(member_id);
-                // Weather monitors use device_number as string
+                // Weather monitors use device_number as string (0 = aggregate)
                 let weather_exists = member_id.parse::<u32>().ok()
-                    .map(|num| self.weather_devices.contains_key(&num))
+                    .map(|num| {
+                        if num == 0 { self.weather_aggregate.is_some() } else { self.weather_devices.contains_key(&num) }
+                    })
                     .unwrap_or(false);
                 if !mqtt_exists && !alpaca_exists && !weather_exists {
                     return Err(anyhow::anyhow!(
@@ -283,10 +396,12 @@ pub struct MonitorStatus {
     pub include_in_safety: bool,
 }
 
-// Weather device configuration
+// Weather source configuration. Each source can also be served as its own
+// ObservingConditions device (1, 2, ...) once more than one source is enabled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeatherDeviceConfig {
-    pub device_number: u32,
+    #[serde(default)]
+    pub device_number: u32, // 0 when creating = assign the next free number
     pub name: String,
     pub description: String,
     pub source: WeatherDataSource,
@@ -294,19 +409,124 @@ pub struct WeatherDeviceConfig {
     pub enabled: bool,
     #[serde(default = "default_auto_connect")]
     pub auto_connect: bool, // If true, device starts in connected state
+    #[serde(default = "default_enabled")]
+    pub expose_device: bool, // Serve as its own ASCOM device when 2+ sources are enabled
     #[serde(default)]
     pub safety_thresholds: Option<WeatherSafetyThresholds>,
 }
 
+/// The aggregate ObservingConditions device (always device 0). Each property is
+/// served from the first source in its priority list that has fresh data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeatherAggregateConfig {
+    #[serde(default = "default_aggregate_name")]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool,
+    /// Data older than this is skipped in favour of the next source in the list
+    #[serde(default = "default_stale_after")]
+    pub stale_after_seconds: u64,
+    /// After falling back, a higher-priority source is only used again once it
+    /// has reported without gaps for this long
+    #[serde(default = "default_return_after")]
+    pub return_after_seconds: u64,
+    /// Default source order (device numbers). Empty = all enabled sources by device number.
+    #[serde(default)]
+    pub source_priority: Vec<u32>,
+    /// Per-property source order, replacing source_priority for that property
+    #[serde(default)]
+    pub property_sources: HashMap<WeatherProperty, Vec<u32>>,
+    #[serde(default)]
+    pub safety_thresholds: Option<WeatherSafetyThresholds>,
+}
+
+impl Default for WeatherAggregateConfig {
+    fn default() -> Self {
+        Self {
+            name: default_aggregate_name(),
+            description: String::new(),
+            auto_connect: true,
+            stale_after_seconds: default_stale_after(),
+            return_after_seconds: default_return_after(),
+            source_priority: Vec::new(),
+            property_sources: HashMap::new(),
+            safety_thresholds: None,
+        }
+    }
+}
+
+impl WeatherAggregateConfig {
+    /// Sources to try for a property, in priority order
+    pub fn sources_for(&self, property: WeatherProperty, weather_devices: &HashMap<u32, WeatherDeviceConfig>) -> Vec<u32> {
+        if let Some(sources) = self.property_sources.get(&property).filter(|s| !s.is_empty()) {
+            return sources.clone();
+        }
+        if !self.source_priority.is_empty() {
+            return self.source_priority.clone();
+        }
+        let mut all: Vec<u32> = weather_devices.keys().copied().collect();
+        all.sort();
+        all
+    }
+
+    /// Drop references to a deleted source
+    pub fn remove_source(&mut self, device_number: u32) {
+        self.source_priority.retain(|n| *n != device_number);
+        for sources in self.property_sources.values_mut() {
+            sources.retain(|n| *n != device_number);
+        }
+        self.property_sources.retain(|_, sources| !sources.is_empty());
+    }
+}
+
+fn default_aggregate_name() -> String {
+    "LLAMA Weather".to_string()
+}
+
+fn default_stale_after() -> u64 {
+    300
+}
+
+fn default_return_after() -> u64 {
+    300
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum WeatherDataSource {
     Tempest {
         serial_number: Option<String>, // If None, accept any Tempest device
     },
+    /// Ecowitt gateway polled over its local HTTP API
+    Ecowitt {
+        host: String, // Hostname or IP of the gateway
+        #[serde(default = "default_ecowitt_poll_interval")]
+        poll_interval_seconds: u64,
+    },
+    /// ASCOM Alpaca ObservingConditions device polled over HTTP
+    Alpaca {
+        host: String,
+        #[serde(default = "default_alpaca_port")]
+        port: u16,
+        #[serde(default)]
+        device_number: u32, // Device number on the remote Alpaca server
+        #[serde(default = "default_ecowitt_poll_interval")]
+        poll_interval_seconds: u64,
+        #[serde(default)]
+        properties: Vec<WeatherProperty>, // Properties to take from this device
+    },
+    /// Weather Underground personal weather station (PWS API)
     WeatherUnderground {
         station_id: String,
         api_key: String,
+        #[serde(default = "default_wu_poll_interval")]
+        poll_interval_seconds: u64, // PWS keys allow 1500 calls/day, so at least 60
+        /// Altitude (m) the station uses to reduce its pressure to sea level. WU only
+        /// has the sea-level value; when set, it is converted back to station pressure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pressure_altitude_m: Option<f64>,
     },
 }
 
@@ -330,6 +550,32 @@ pub struct WeatherSafetyThresholds {
     pub wind_gust: Option<ThresholdConfig>,
     #[serde(default)]
     pub rain_rate: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub sky_quality: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub sky_temperature: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub cloud_cover: Option<ThresholdConfig>,
+}
+
+impl WeatherSafetyThresholds {
+    /// The thresholds that are configured, paired with the property they apply to
+    pub fn configured(&self) -> Vec<(WeatherProperty, &ThresholdConfig)> {
+        [
+            (WeatherProperty::Temperature, &self.temperature),
+            (WeatherProperty::Humidity, &self.humidity),
+            (WeatherProperty::SkyBrightness, &self.sky_brightness),
+            (WeatherProperty::WindSpeed, &self.wind_speed),
+            (WeatherProperty::WindGust, &self.wind_gust),
+            (WeatherProperty::RainRate, &self.rain_rate),
+            (WeatherProperty::SkyQuality, &self.sky_quality),
+            (WeatherProperty::SkyTemperature, &self.sky_temperature),
+            (WeatherProperty::CloudCover, &self.cloud_cover),
+        ]
+        .into_iter()
+        .filter_map(|(property, threshold)| threshold.as_ref().map(|t| (property, t)))
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +585,18 @@ pub struct ThresholdConfig {
     pub safe_when_true: bool,
     #[serde(default)]
     pub timeout_seconds: Option<i64>, // Per-measurement timeout (overrides global if set, <0 = ignore timeout)
+}
+
+fn default_ecowitt_poll_interval() -> u64 {
+    30
+}
+
+fn default_wu_poll_interval() -> u64 {
+    120
+}
+
+fn default_alpaca_port() -> u16 {
+    11111
 }
 
 fn default_auto_connect() -> bool {
@@ -506,4 +764,98 @@ pub struct SwitchSourceStatus {
     pub threshold: f64,
     pub last_update: Option<chrono::DateTime<chrono::Utc>>,
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn old_style_config() -> AppConfig {
+        serde_json::from_value(serde_json::json!({
+            "weather_devices": {
+                "0": {
+                    "device_number": 0,
+                    "name": "Tempest Weather Station",
+                    "description": "WeatherFlow Tempest",
+                    "source": {"type": "tempest", "serial_number": null},
+                    "enabled": true,
+                    "auto_connect": true,
+                    "safety_thresholds": {
+                        "enabled": true,
+                        "timeout_seconds": 300,
+                        "hold_time_seconds": 60,
+                        "rain_rate": {"threshold": 0.0, "operator": "greaterthan", "safe_when_true": false}
+                    }
+                }
+            },
+            "monitor_groups": {},
+            "server_port": 8080
+        })).unwrap()
+    }
+
+    #[test]
+    fn migration_moves_device_zero_to_a_source_behind_the_aggregate() {
+        let mut config = old_style_config();
+        assert!(config.migrate());
+
+        let aggregate = config.weather_aggregate.as_ref().unwrap();
+        assert_eq!(aggregate.name, "Tempest Weather Station");
+        assert!(aggregate.safety_thresholds.as_ref().unwrap().rain_rate.is_some());
+
+        let source = &config.weather_devices[&1];
+        assert_eq!(source.device_number, 1);
+        assert!(source.safety_thresholds.is_none());
+        assert!(source.expose_device);
+        assert!(!config.weather_devices.contains_key(&0));
+        config.validate().unwrap();
+
+        // Already migrated: nothing more to do
+        assert!(!config.migrate());
+    }
+
+    #[test]
+    fn example_config_is_valid_and_already_migrated() {
+        let mut config: AppConfig = serde_json::from_str(include_str!("../../config.example.json")).unwrap();
+        assert!(!config.migrate());
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn migration_of_config_without_weather_adds_default_aggregate() {
+        let mut config: AppConfig = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(config.migrate());
+        assert!(config.weather_devices.is_empty());
+        assert_eq!(config.weather_aggregate.unwrap().name, "LLAMA Weather");
+    }
+
+    #[test]
+    fn device_number_zero_is_rejected_after_migration() {
+        let mut config = old_style_config();
+        config.migrate();
+        let mut device = config.weather_devices[&1].clone();
+        device.device_number = 0;
+        config.weather_devices.insert(0, device);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn aggregate_source_order_falls_back_to_all_sources() {
+        let mut config = old_style_config();
+        config.migrate();
+        let mut second = config.weather_devices[&1].clone();
+        second.device_number = 2;
+        config.weather_devices.insert(2, second);
+
+        let aggregate = config.weather_aggregate.as_mut().unwrap();
+        assert_eq!(aggregate.sources_for(WeatherProperty::WindSpeed, &config.weather_devices), vec![1, 2]);
+
+        aggregate.source_priority = vec![2, 1];
+        aggregate.property_sources.insert(WeatherProperty::Pressure, vec![1]);
+        assert_eq!(aggregate.sources_for(WeatherProperty::WindSpeed, &config.weather_devices), vec![2, 1]);
+        assert_eq!(aggregate.sources_for(WeatherProperty::Pressure, &config.weather_devices), vec![1]);
+
+        aggregate.remove_source(1);
+        assert_eq!(aggregate.source_priority, vec![2]);
+        assert!(aggregate.property_sources.is_empty());
+    }
 }

@@ -372,19 +372,30 @@
 
             <!-- Weather Devices Tab -->
             <div id="tab-weather-devices" class="tab-content">
-                <div class="section">
-                    <h2>Weather Devices</h2>
-                    <button class="btn btn-primary" onclick="showAddWeatherDevice()">Add Weather Device</button>
-                    <div id="weather-devices-list" class="list-container"></div>
+                <div id="weather-overview">
+                    <div class="section">
+                        <h2>Aggregate Weather Device</h2>
+                        <div class="info-text" style="margin-bottom: 12px;">
+                            ObservingConditions device 0 serves each measurement from the first source in its priority list
+                            with fresh data. Once two or more sources are enabled, each source is also served as its own device (1, 2, ...).
+                        </div>
+                        <div id="weather-aggregate-summary" class="list-container"></div>
+                    </div>
+
+                    <div class="section">
+                        <h2>Weather Sources</h2>
+                        <button class="btn btn-primary" onclick="showAddWeatherDevice()">Add Weather Source</button>
+                        <div id="weather-devices-list" class="list-container"></div>
+                    </div>
                 </div>
 
                 <div id="weather-device-form" class="section" style="display: none;">
-                    <h2 id="weather-device-form-title">Add Weather Device</h2>
+                    <h2 id="weather-device-form-title">Add Weather Source</h2>
                     <div class="form-row">
-                        <div class="form-group">
+                        <div class="form-group" id="weather-device-number-group">
                             <label>Device Number *</label>
-                            <input type="number" id="weather-device-number" value="0" min="0">
-                            <div class="info-text">ASCOM device number (0, 1, 2, ...)</div>
+                            <input type="number" id="weather-device-number" value="1" min="1">
+                            <div class="info-text">ASCOM device number when served individually (1, 2, ...). Device 0 is the aggregate.</div>
                         </div>
                         <div class="form-group">
                             <label>Device Name *</label>
@@ -395,11 +406,14 @@
                         <label>Description</label>
                         <input type="text" id="weather-device-description" placeholder="e.g., WeatherFlow Tempest all-in-one weather station">
                     </div>
+                    <div id="weather-source-config">
                     <div class="form-group">
                         <label>Data Source *</label>
                         <select id="weather-device-source-type" onchange="updateWeatherSourceFields()">
                             <option value="tempest">Tempest Weather Station (UDP)</option>
-                            <option value="weatherunderground" disabled>Weather Underground (Future)</option>
+                            <option value="ecowitt">Ecowitt Gateway (HTTP polling)</option>
+                            <option value="alpaca">ASCOM Alpaca ObservingConditions (HTTP polling)</option>
+                            <option value="weatherunderground">Weather Underground PWS (cloud API)</option>
                         </select>
                     </div>
                     <div id="tempest-fields">
@@ -409,23 +423,83 @@
                             <div class="info-text">Leave empty to accept data from any Tempest device on the network</div>
                         </div>
                     </div>
+                    <div id="alpaca-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Alpaca Host *</label>
+                                <input type="text" id="weather-device-alpaca-host" placeholder="e.g., skycon.local or 192.168.1.60">
+                            </div>
+                            <div class="form-group">
+                                <label>Port</label>
+                                <input type="number" id="weather-device-alpaca-port" value="11111" min="1" max="65535">
+                            </div>
+                            <div class="form-group">
+                                <label>Remote Device Number</label>
+                                <input type="number" id="weather-device-alpaca-device" value="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-alpaca-interval" value="30" min="5">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <button type="button" class="btn btn-secondary" onclick="detectAlpacaProperties()">Detect Properties</button>
+                            <div class="info-text">Reads the device and lists the ObservingConditions properties it implements. Only checked properties are used.</div>
+                            <div id="weather-device-alpaca-properties" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+                    <div id="ecowitt-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Gateway Host *</label>
+                                <input type="text" id="weather-device-ecowitt-host" placeholder="e.g., ecowitt.local or 192.168.1.50">
+                                <div class="info-text">Hostname or IP of a GW1100/GW2000/GW3000 gateway; polls /get_livedata_info</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-ecowitt-interval" value="30" min="5">
+                            </div>
+                        </div>
+                    </div>
                     <div id="wu-fields" style="display: none;">
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Station ID</label>
+                                <label>Station ID *</label>
                                 <input type="text" id="weather-device-wu-station" placeholder="e.g., KMABOSTON123">
                             </div>
                             <div class="form-group">
-                                <label>API Key</label>
-                                <input type="text" id="weather-device-wu-apikey" placeholder="Your WU API key">
+                                <label>API Key *</label>
+                                <input type="password" id="weather-device-wu-apikey" placeholder="Your WU API key" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-wu-interval" value="120" min="60">
                             </div>
                         </div>
+                        <div class="form-group">
+                            <label>Station Altitude for Pressure (m, optional)</label>
+                            <input type="number" step="1" min="0" max="9000" id="weather-device-wu-altitude" placeholder="e.g., 1100">
+                            <div class="info-text">
+                                <strong>Weather Underground only provides sea-level (relative) pressure</strong>, but ASCOM Pressure is the pressure at the station.
+                                Enter the altitude the station uses to calculate its sea-level pressure (for an Ecowitt gateway, the altitude set in its pressure calibration)
+                                and LLAMA converts the value back to station pressure, typically within about 1 hPa. Leave blank to not use pressure from this source.
+                            </div>
+                        </div>
+                        <div class="info-text">Personal weather station API keys are issued to station owners (wunderground.com → My Profile → API Keys) and allow 1500 calls/day, so the interval must be at least 60s.</div>
                     </div>
                     <div class="form-group">
                         <label class="checkbox-group">
                             <input type="checkbox" id="weather-device-enabled" checked>
-                            <span>Device Enabled</span>
+                            <span>Source Enabled</span>
                         </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="weather-device-expose" checked>
+                            <span>Serve as its own ASCOM device</span>
+                        </label>
+                        <div class="info-text">Only applies when two or more sources are enabled. The source still feeds the aggregate device either way.</div>
+                    </div>
                     </div>
                     <div class="form-group">
                         <label class="checkbox-group">
@@ -433,6 +507,32 @@
                             <span>Auto-Connect on Startup</span>
                         </label>
                         <div class="info-text">If checked, device will start in connected state (no manual connect required)</div>
+                    </div>
+
+                    <div id="weather-aggregate-fields" style="display: none;">
+                        <h3>Source Selection</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Stale After (seconds)</label>
+                                <input type="number" id="weather-aggregate-stale-after" value="300" min="1">
+                                <div class="info-text">A source whose data is older than this is skipped in favour of the next one. If every source is stale, the newest data is still served and safety timeouts apply. Keep this well above each source's report interval (Tempest: 60s).</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Return After (seconds)</label>
+                                <input type="number" id="weather-aggregate-return-after" value="300" min="0">
+                                <div class="info-text">After falling back, a higher-priority source is used again only once it has reported without gaps for this long. Prevents switching back and forth when a source is intermittent.</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Default Source Order</label>
+                            <div class="info-text" style="margin-bottom: 6px;">Sources are used in the numbered order; the first one with fresh data wins. Click a source to stop or start using it, and use ‹ › to move it. With every source used in device-number order, new sources are included automatically.</div>
+                            <div id="weather-aggregate-order"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Per-Measurement Source Order</label>
+                            <div class="info-text" style="margin-bottom: 6px;">Each measurement lists only the sources that provide it, with their current values. Rows follow the default order until you change them; Reset returns a row to the default.</div>
+                            <div id="weather-aggregate-properties"></div>
+                        </div>
                     </div>
 
                     <h3>Safety Thresholds (Optional)</h3>
@@ -617,12 +717,42 @@
                             <div id="weather-threshold-sky_brightness-fields" class="threshold-fields" style="display: none;">
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label>Threshold (mag/arcsec²)</label>
-                                        <input type="number" step="0.1" id="weather-threshold-sky_brightness" value="18">
+                                        <label>Threshold (lux)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_brightness" value="10">
                                     </div>
                                     <div class="form-group">
                                         <label>Operator</label>
                                         <select id="weather-threshold-sky_brightness-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-sky_brightness-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sky Quality Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-sky_quality-enabled" onchange="toggleThresholdFields('sky_quality')">
+                                <span>Sky Quality Threshold</span>
+                            </label>
+                            <div id="weather-threshold-sky_quality-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (mag/arcsec²)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_quality" value="18">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-sky_quality-operator">
                                             <option value="greaterthan">Greater Than</option>
                                             <option value="lessthan" selected>Less Than</option>
                                             <option value="equal">Equal</option>
@@ -630,7 +760,67 @@
                                     </div>
                                     <div class="form-group">
                                         <label class="checkbox-group">
-                                            <input type="checkbox" id="weather-threshold-sky_brightness-safe-when-true">
+                                            <input type="checkbox" id="weather-threshold-sky_quality-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sky Temperature Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-sky_temperature-enabled" onchange="toggleThresholdFields('sky_temperature')">
+                                <span>Sky Temperature Threshold</span>
+                            </label>
+                            <div id="weather-threshold-sky_temperature-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (°C)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_temperature" value="-15">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-sky_temperature-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-sky_temperature-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cloud Cover Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-cloud_cover-enabled" onchange="toggleThresholdFields('cloud_cover')">
+                                <span>Cloud Cover Threshold</span>
+                            </label>
+                            <div id="weather-threshold-cloud_cover-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (%)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-cloud_cover" value="50">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-cloud_cover-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-cloud_cover-safe-when-true">
                                             <span>Safe when TRUE</span>
                                         </label>
                                     </div>
