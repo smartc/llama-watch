@@ -411,6 +411,30 @@ mod tests {
     }
 
     #[test]
+    fn a_single_missed_read_does_not_switch_source_but_an_outage_does() {
+        let now = Utc::now();
+        let (_, config) = setup(now, 10, 10);
+        let mut store = WeatherStore::started_at(now - Duration::seconds(3600));
+        let tempest = WeatherStore::tempest_key("ST-1");
+        let ecowitt = WeatherStore::ecowitt_key("gw");
+        for t in (0..=3600).step_by(60) {
+            wind(&mut store, tempest.clone(), now - Duration::seconds(3600 - t), 1.0);
+            wind(&mut store, ecowitt.clone(), now - Duration::seconds(3600 - t), 2.0);
+        }
+        // Latest Tempest packet lacks wind speed (e.g. a failed read)
+        store.update(tempest.clone(), WeatherObservation::new(now, BTreeMap::from([(WeatherProperty::Pressure, 890.0)])));
+
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, now);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].source_device, 1);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].value, 1.0);
+
+        // If Tempest keeps omitting it, the carried value goes stale and the aggregate falls back
+        let later = now + Duration::seconds(400);
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, later);
+        assert_eq!(readings[&WeatherProperty::WindSpeed].source_device, 2);
+    }
+
+    #[test]
     fn primary_is_used_when_no_source_is_steady_yet() {
         let now = Utc::now();
         let (_, config) = setup(now, 10, 10);

@@ -354,6 +354,9 @@ Static files in `static/`:
 - Tempest broadcasts are received asynchronously via UDP and stamped with the observation time
 - Ecowitt observations are stamped with the time of the successful poll (the payload has no timestamp)
 - Alpaca observations carry per-property measurement times (`WeatherObservation::measured_at`)
+- `WeatherStore::update` carries forward values the previous observation had but the new one lacks (a failed
+  read, an Ecowitt `--`), keeping their original measurement time, so a brief miss doesn't drop the property while
+  a real outage still ages past `stale_after_seconds` and the safety timeouts
 - `WeatherStore` keys observations as `tempest:<serial>` / `ecowitt:<host>` / `alpaca:<host>:<port>:<device>` / `wu:<station>`; a Tempest source without a serial uses the most recently heard Tempest
 - `timeSinceLastUpdate` is per property, from the reading actually served (for device 0, the chosen source)
 - Never hold the config `RwLock` while calling `WeatherDataAccessor::readings()` (it locks config itself);
