@@ -27,6 +27,7 @@ pub fn create_router(state: SharedWebState) -> Router {
         .route("/api/weather/devices/:id/toggle", post(handlers::toggle_weather_device))
         .route("/api/weather/devices/:id/connect", post(handlers::set_weather_device_connection))
         .route("/api/weather/status", get(handlers::get_weather_status))
+        .route("/api/weather/aggregate", get(handlers::get_weather_aggregate).put(handlers::update_weather_aggregate))
         // Alpaca discovery endpoints
         .route("/api/discovery/scan", get(handlers::discover_devices).post(handlers::discover_devices_with_options))
         .route("/api/discovery/probe", post(handlers::probe_device))

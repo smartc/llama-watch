@@ -10,10 +10,11 @@ pub mod ecowitt;
 pub mod observation;
 pub mod tempest;
 pub mod observing_conditions;
+pub mod service;
 pub mod weather_monitor;
 
-pub use ecowitt::EcowittPollers;
 pub use tempest::TempestListener;
 pub use observation::WeatherStore;
 pub use observing_conditions::{ObservingConditionsDevice, WeatherDataAccessor};
-pub use weather_monitor::{WeatherMonitor, WeatherMonitorManager};
+pub use service::WeatherService;
+pub use weather_monitor::WeatherMonitorManager;

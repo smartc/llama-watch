@@ -5,8 +5,9 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::config::models::{ThresholdConfig, WeatherDeviceConfig};
-use super::observing_conditions::WeatherDataAccessor;
+use crate::config::models::{AppConfig, ThresholdConfig, WeatherSafetyThresholds};
+use super::observation::Readings;
+use super::observing_conditions::{WeatherDataAccessor, WeatherDeviceKind};
 
 #[derive(Debug, Clone)]
 pub struct WeatherMonitorStatus {
@@ -33,32 +34,105 @@ pub struct MeasurementStatus {
     pub last_update: Option<DateTime<Utc>>,
 }
 
+/// Result of checking readings against safety thresholds
+#[derive(Debug)]
+pub struct Evaluation {
+    /// All thresholds are within their safe range
+    pub all_safe: bool,
+    pub measurements: HashMap<String, MeasurementStatus>,
+    /// Missing or timed-out data. Makes the monitor UNSAFE immediately,
+    /// bypassing the hold time.
+    pub problem: Option<String>,
+    pub latest_update: Option<DateTime<Utc>>,
+}
+
+/// Check readings against thresholds. A configured threshold whose property has
+/// no data, or whose data is older than its timeout, counts as unsafe.
+pub fn evaluate(thresholds: &WeatherSafetyThresholds, readings: &Readings, now: DateTime<Utc>) -> Evaluation {
+    let latest_update = readings.values().map(|r| r.timestamp).max();
+    if latest_update.is_none() {
+        return Evaluation {
+            all_safe: false,
+            measurements: HashMap::new(),
+            problem: Some("No weather data received yet".to_string()),
+            latest_update,
+        };
+    }
+
+    let mut measurements = HashMap::new();
+    let mut all_safe = true;
+    let mut problems = Vec::new();
+
+    for (property, threshold) in thresholds.configured() {
+        let Some(reading) = readings.get(&property) else {
+            all_safe = false;
+            problems.push(format!("No {} data", property.label()));
+            continue;
+        };
+
+        // Per-measurement timeout overrides the global one
+        // timeout > 0: enabled, == 0: disabled, < 0: ignored
+        let timeout = threshold.timeout_seconds.unwrap_or(thresholds.timeout_seconds);
+        let age = (now - reading.timestamp).num_seconds();
+        let timed_out = timeout > 0 && age > timeout;
+        if timed_out {
+            problems.push(format!("{} data timeout ({} seconds old)", property.label(), age));
+        }
+
+        let is_safe = !timed_out && check_threshold(reading.value, threshold);
+        all_safe = all_safe && is_safe;
+        measurements.insert(property.label().to_string(), MeasurementStatus {
+            name: property.label().to_string(),
+            value: reading.value,
+            threshold: threshold.threshold,
+            is_safe,
+            timeout_seconds: threshold.timeout_seconds,
+            last_update: Some(reading.timestamp),
+        });
+    }
+
+    Evaluation {
+        all_safe,
+        measurements,
+        problem: (!problems.is_empty()).then(|| problems.join("; ")),
+        latest_update,
+    }
+}
+
 /// Individual weather monitor
 pub struct WeatherMonitor {
-    config: WeatherDeviceConfig,
+    kind: WeatherDeviceKind,
+    name: String,
+    thresholds: WeatherSafetyThresholds,
     weather_data: Arc<WeatherDataAccessor>,
     status: Arc<RwLock<WeatherMonitorStatus>>,
 }
 
 impl WeatherMonitor {
-    pub fn new(config: WeatherDeviceConfig, weather_data: Arc<WeatherDataAccessor>) -> Self {
+    pub fn new(
+        kind: WeatherDeviceKind,
+        name: String,
+        thresholds: WeatherSafetyThresholds,
+        weather_data: Arc<WeatherDataAccessor>,
+        initial_is_safe: bool,
+    ) -> Self {
         let status = WeatherMonitorStatus {
-            device_number: config.device_number,
-            name: config.name.clone(),
-            is_safe: true, // Start optimistic
+            device_number: kind.device_number(),
+            name: name.clone(),
+            is_safe: initial_is_safe,
             last_update: None,
             error: None,
-            enabled: config.enabled,
+            enabled: true,
             measurements: HashMap::new(),
-            hold_time_seconds: config.safety_thresholds.as_ref()
-                .map(|t| t.hold_time_seconds)
-                .unwrap_or(0),
+            hold_time_seconds: thresholds.hold_time_seconds,
             pending_is_safe: None,
             pending_since: None,
         };
 
         Self {
-            config,
+            kind,
+            name,
+            thresholds,
             weather_data,
             status: Arc::new(RwLock::new(status)),
         }
@@ -69,13 +143,13 @@ impl WeatherMonitor {
     }
 
     /// Start monitoring task
-    pub async fn start(self: Arc<Self>) -> JoinHandle<()> {
+    pub fn start(self: Arc<Self>) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
                 if let Err(e) = self.check_safety().await {
                     let mut status = self.status.write().await;
                     status.error = Some(format!("Monitor error: {}", e));
-                    warn!("Weather monitor {} error: {}", self.config.name, e);
+                    warn!("Weather monitor {} error: {}", self.name, e);
                 }
 
                 // Check every 5 seconds
@@ -85,66 +159,31 @@ impl WeatherMonitor {
     }
 
     async fn check_safety(&self) -> anyhow::Result<()> {
-        // Skip if safety thresholds not configured or disabled
-        let thresholds = match &self.config.safety_thresholds {
-            Some(t) if t.enabled => t,
-            _ => return Ok(()), // No thresholds configured
-        };
-
-        let readings = self.weather_data.readings(&self.config).await;
-        let latest_update = match readings.values().map(|r| r.timestamp).max() {
-            Some(ts) => ts,
-            None => {
-                // No data yet
-                let mut status = self.status.write().await;
-                status.error = Some("No weather data received yet".to_string());
-                return Ok(());
-            }
-        };
-
-        // Check timeout (if enabled)
-        // timeout_seconds > 0: timeout enabled
-        // timeout_seconds == 0: timeout disabled
-        // timeout_seconds < 0: timeout ignored completely
+        let readings = self.weather_data.readings(self.kind).await;
         let now = Utc::now();
-        let time_since_update = (now - latest_update).num_seconds();
-        if thresholds.timeout_seconds > 0 && time_since_update > thresholds.timeout_seconds {
-            let mut status = self.status.write().await;
+        let evaluation = evaluate(&self.thresholds, &readings, now);
+
+        let mut status = self.status.write().await;
+        status.measurements = evaluation.measurements;
+        if evaluation.latest_update.is_some() {
+            status.last_update = evaluation.latest_update;
+        }
+
+        if let Some(problem) = evaluation.problem {
+            if status.is_safe {
+                warn!("Weather monitor {} UNSAFE: {}", self.name, problem);
+            }
             status.is_safe = false;
-            status.error = Some(format!("Weather data timeout ({} seconds old)", time_since_update));
+            status.error = Some(problem);
             status.pending_is_safe = None;
             status.pending_since = None;
             return Ok(());
         }
-        // If timeout_seconds <= 0, we skip the timeout check
-
-        // Check all configured thresholds
-        let mut measurements = HashMap::new();
-        let mut all_safe = true;
-
-        for (property, threshold) in thresholds.configured() {
-            if let Some(reading) = readings.get(&property) {
-                let is_safe = check_threshold(reading.value, threshold);
-                all_safe = all_safe && is_safe;
-                measurements.insert(property.label().to_string(), MeasurementStatus {
-                    name: property.label().to_string(),
-                    value: reading.value,
-                    threshold: threshold.threshold,
-                    is_safe,
-                    timeout_seconds: threshold.timeout_seconds,
-                    last_update: Some(reading.timestamp),
-                });
-            }
-        }
-
-        // Update status with hold time logic
-        let mut status = self.status.write().await;
-        status.last_update = Some(latest_update);
         status.error = None;
-        status.measurements = measurements;
+        let all_safe = evaluation.all_safe;
 
         // Handle hold time state machine
-        if thresholds.hold_time_seconds == 0 {
+        if self.thresholds.hold_time_seconds == 0 {
             // No hold time, immediate state change
             status.is_safe = all_safe;
             status.pending_is_safe = None;
@@ -157,23 +196,23 @@ impl WeatherMonitor {
                     // Already pending this state
                     if let Some(pending_since) = status.pending_since {
                         let elapsed = (now - pending_since).num_seconds() as u64;
-                        if elapsed >= thresholds.hold_time_seconds {
+                        if elapsed >= self.thresholds.hold_time_seconds {
                             // Hold time elapsed, commit the change
                             info!("Weather monitor {} state changing to {} after {} second hold",
-                                self.config.name, if all_safe { "SAFE" } else { "UNSAFE" }, elapsed);
+                                self.name, if all_safe { "SAFE" } else { "UNSAFE" }, elapsed);
                             status.is_safe = all_safe;
                             status.pending_is_safe = None;
                             status.pending_since = None;
                         } else {
                             debug!("Weather monitor {} pending {} ({}/{} seconds)",
-                                self.config.name, if all_safe { "SAFE" } else { "UNSAFE" },
-                                elapsed, thresholds.hold_time_seconds);
+                                self.name, if all_safe { "SAFE" } else { "UNSAFE" },
+                                elapsed, self.thresholds.hold_time_seconds);
                         }
                     }
                 } else {
                     // New pending state
                     info!("Weather monitor {} wants to change to {}, starting hold timer",
-                        self.config.name, if all_safe { "SAFE" } else { "UNSAFE" });
+                        self.name, if all_safe { "SAFE" } else { "UNSAFE" });
                     status.pending_is_safe = Some(all_safe);
                     status.pending_since = Some(now);
                 }
@@ -181,7 +220,7 @@ impl WeatherMonitor {
                 // State matches current, clear pending
                 if status.pending_is_safe.is_some() {
                     debug!("Weather monitor {} returned to current state, clearing pending",
-                        self.config.name);
+                        self.name);
                     status.pending_is_safe = None;
                     status.pending_since = None;
                 }
@@ -215,24 +254,24 @@ impl WeatherMonitorManager {
         }
     }
 
-    pub async fn initialize(
-        &mut self,
-        configs: &HashMap<u32, WeatherDeviceConfig>,
-        weather_data: Arc<WeatherDataAccessor>,
-    ) {
-        // Create monitors for devices with safety thresholds enabled
-        for (device_number, config) in configs {
-            if config.enabled {
-                if let Some(thresholds) = &config.safety_thresholds {
-                    if thresholds.enabled {
-                        let monitor = Arc::new(WeatherMonitor::new(config.clone(), weather_data.clone()));
-                        let handle = monitor.clone().start().await;
-                        self.monitors.insert(*device_number, monitor);
-                        self.tasks.insert(*device_number, handle);
-                        info!("Started weather safety monitor for device {}: {}", device_number, config.name);
-                    }
-                }
-            }
+    /// Replace all monitors with those the configuration asks for. A monitor
+    /// that existed before keeps its committed safe/unsafe state; new monitors
+    /// start UNSAFE until their data has been SAFE for the hold time.
+    pub async fn rebuild(&mut self, config: &AppConfig, weather_data: Arc<WeatherDataAccessor>) {
+        let previous: HashMap<u32, bool> = self.get_all_statuses().await.into_iter()
+            .map(|(n, status)| (n, status.is_safe))
+            .collect();
+        self.shutdown().await;
+
+        for (kind, name, thresholds) in monitored_devices(config) {
+            let number = kind.device_number();
+            let initial_is_safe = previous.get(&number).copied().unwrap_or(false);
+            let monitor = Arc::new(WeatherMonitor::new(
+                kind, name.clone(), thresholds, weather_data.clone(), initial_is_safe,
+            ));
+            self.tasks.insert(number, monitor.clone().start());
+            self.monitors.insert(number, monitor);
+            info!("Started weather safety monitor for device {}: {}", number, name);
         }
     }
 
@@ -241,18 +280,6 @@ impl WeatherMonitorManager {
             task.abort();
         }
         self.monitors.clear();
-    }
-
-    pub async fn remove_monitor(&mut self, device_number: u32) {
-        if let Some(task) = self.tasks.remove(&device_number) {
-            task.abort();
-        }
-        self.monitors.remove(&device_number);
-        info!("Removed weather safety monitor for device {}", device_number);
-    }
-
-    pub fn get_monitor(&self, device_number: u32) -> Option<&Arc<WeatherMonitor>> {
-        self.monitors.get(&device_number)
     }
 
     pub async fn get_all_statuses(&self) -> HashMap<u32, WeatherMonitorStatus> {
@@ -275,39 +302,93 @@ impl WeatherMonitorManager {
         }
         true
     }
+}
 
-    /// Get overall safety status across all weather monitors
-    pub async fn get_overall_status(&self) -> Option<(bool, Vec<String>)> {
-        if self.monitors.is_empty() {
-            return None;
-        }
+/// Devices with safety thresholds enabled: the aggregate (when it has an
+/// enabled source) and any enabled source with its own thresholds
+fn monitored_devices(config: &AppConfig) -> Vec<(WeatherDeviceKind, String, WeatherSafetyThresholds)> {
+    let mut monitored = Vec::new();
+    let any_source_enabled = config.weather_devices.values().any(|d| d.enabled);
 
-        let mut all_safe = true;
-        let mut messages = Vec::new();
-
-        for monitor in self.monitors.values() {
-            let status_lock = monitor.get_status();
-            let status = status_lock.read().await;
-            if !status.enabled {
-                continue;
-            }
-
-            if !status.is_safe {
-                all_safe = false;
-                if let Some(error) = &status.error {
-                    messages.push(format!("{}: {}", status.name, error));
-                } else {
-                    // Report which measurements are unsafe
-                    for measurement in status.measurements.values() {
-                        if !measurement.is_safe {
-                            messages.push(format!("{} - {}: {:.1} (threshold: {:.1})",
-                                status.name, measurement.name, measurement.value, measurement.threshold));
-                        }
-                    }
-                }
+    if let Some(aggregate) = &config.weather_aggregate {
+        if let Some(thresholds) = aggregate.safety_thresholds.as_ref().filter(|t| t.enabled) {
+            if any_source_enabled {
+                monitored.push((WeatherDeviceKind::Aggregate, aggregate.name.clone(), thresholds.clone()));
             }
         }
+    }
 
-        Some((all_safe, messages))
+    for (number, device) in &config.weather_devices {
+        if let Some(thresholds) = device.safety_thresholds.as_ref().filter(|t| t.enabled && device.enabled) {
+            monitored.push((WeatherDeviceKind::Source(*number), device.name.clone(), thresholds.clone()));
+        }
+    }
+    monitored
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::models::ComparisonOperator;
+    use crate::weather::observation::{Reading, WeatherProperty};
+    use chrono::Duration;
+
+    fn rain_threshold(timeout: Option<i64>) -> WeatherSafetyThresholds {
+        WeatherSafetyThresholds {
+            enabled: true,
+            timeout_seconds: 300,
+            hold_time_seconds: 60,
+            rain_rate: Some(ThresholdConfig {
+                threshold: 0.0,
+                operator: ComparisonOperator::GreaterThan,
+                safe_when_true: false,
+                timeout_seconds: timeout,
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn readings(property: WeatherProperty, value: f64, age: i64, now: DateTime<Utc>) -> Readings {
+        Readings::from([(property, Reading { value, timestamp: now - Duration::seconds(age), source_device: 1 })])
+    }
+
+    #[test]
+    fn evaluates_thresholds() {
+        let now = Utc::now();
+        let dry = evaluate(&rain_threshold(None), &readings(WeatherProperty::RainRate, 0.0, 5, now), now);
+        assert!(dry.all_safe && dry.problem.is_none());
+
+        let wet = evaluate(&rain_threshold(None), &readings(WeatherProperty::RainRate, 1.2, 5, now), now);
+        assert!(!wet.all_safe && wet.problem.is_none());
+    }
+
+    #[test]
+    fn missing_threshold_property_is_unsafe() {
+        let now = Utc::now();
+        let eval = evaluate(&rain_threshold(None), &readings(WeatherProperty::WindSpeed, 1.0, 5, now), now);
+        assert!(!eval.all_safe);
+        assert_eq!(eval.problem.as_deref(), Some("No Rain Rate data"));
+    }
+
+    #[test]
+    fn no_data_at_all_is_unsafe() {
+        let eval = evaluate(&rain_threshold(None), &Readings::new(), Utc::now());
+        assert!(!eval.all_safe);
+        assert!(eval.problem.is_some());
+    }
+
+    #[test]
+    fn per_measurement_timeout_overrides_global() {
+        let now = Utc::now();
+        let data = readings(WeatherProperty::RainRate, 0.0, 200, now);
+        assert!(evaluate(&rain_threshold(None), &data, now).problem.is_none());
+
+        let eval = evaluate(&rain_threshold(Some(120)), &data, now);
+        assert!(!eval.all_safe);
+        assert!(eval.problem.unwrap().contains("timeout"));
+
+        // Negative timeout ignores data age
+        let old = readings(WeatherProperty::RainRate, 0.0, 10_000, now);
+        assert!(evaluate(&rain_threshold(Some(-1)), &old, now).all_safe);
     }
 }

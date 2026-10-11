@@ -10,9 +10,7 @@ use tokio::sync::RwLock;
 
 use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams};
 use crate::weather::observation::WeatherProperty;
-use crate::weather::observing_conditions::{
-    ObservingConditionsDevice, WeatherDataAccessor, get_sensor_description, is_property_supported,
-};
+use crate::weather::observing_conditions::{ObservingConditionsDevice, WeatherDataAccessor};
 
 pub type ObservingConditionsState = Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>;
 
@@ -116,8 +114,7 @@ macro_rules! property_getter {
             let name = property.ascom_name().unwrap_or(property.label());
 
             // Check if property is supported
-            let config = dev.get_config();
-            if !is_property_supported(&config, property) {
+            if !state.weather_data.is_property_supported(dev.kind, property).await {
                 return Json(AlpacaResponse::<$return_type>::error(
                     params.client_transaction_i_d,
                     server_id,
@@ -126,7 +123,7 @@ macro_rules! property_getter {
                 )).into_response();
             }
 
-            let readings = state.weather_data.readings(&config).await;
+            let readings = state.weather_data.readings(dev.kind).await;
             let value = match readings.get(&property) {
                 Some(reading) => reading.value,
                 None => {
@@ -340,9 +337,8 @@ pub async fn get_sensordescription(
     let server_id = dev.next_transaction_id();
 
     // Check if property is supported - if not, return NotImplementedException
-    let config = dev.get_config();
     let property = match WeatherProperty::from_ascom_name(&params.sensor_name) {
-        Some(p) if is_property_supported(&config, p) => p,
+        Some(p) if state.weather_data.is_property_supported(dev.kind, p).await => p,
         _ => {
             return Json(AlpacaResponse::<String>::error(
                 params.client_transaction_i_d,
@@ -353,7 +349,7 @@ pub async fn get_sensordescription(
         }
     };
 
-    let description = get_sensor_description(&config, property);
+    let description = state.weather_data.sensor_description(dev.kind, property).await;
 
     Json(AlpacaResponse::success(
         description,
@@ -399,8 +395,7 @@ pub async fn get_timesincelastupdate(
         )).into_response();
     }
 
-    let config = dev.get_config();
-    let readings = state.weather_data.readings(&config).await;
+    let readings = state.weather_data.readings(dev.kind).await;
     let now = chrono::Utc::now();
     let age = |timestamp: chrono::DateTime<chrono::Utc>| {
         now.signed_duration_since(timestamp).num_milliseconds() as f64 / 1000.0
@@ -416,7 +411,7 @@ pub async fn get_timesincelastupdate(
     } else {
         // Check if property is supported - if not, return NotImplementedException
         let property = match WeatherProperty::from_ascom_name(&params.sensor_name) {
-            Some(p) if is_property_supported(&config, p) => p,
+            Some(p) if state.weather_data.is_property_supported(dev.kind, p).await => p,
             _ => {
                 return Json(AlpacaResponse::<f64>::error(
                     params.client_transaction_i_d,
@@ -459,7 +454,7 @@ pub async fn put_refresh(
 
     let server_id = dev.next_transaction_id();
 
-    // Refresh is a no-op for us since we continuously receive UDP data
+    // Refresh is a no-op: sources are received (Tempest UDP) or polled (Ecowitt) continuously
     Json(AlpacaResponse::success(
         (),
         params.client_transaction_i_d,

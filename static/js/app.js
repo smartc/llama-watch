@@ -971,18 +971,7 @@ async function autoConnectDevices() {
             body: 'Connected=true'
         });
 
-        // Connect all weather devices with auto_connect enabled
-        if (config.weather_devices) {
-            for (const [deviceNumber, deviceConfig] of Object.entries(config.weather_devices)) {
-                if (deviceConfig.auto_connect && deviceConfig.enabled) {
-                    await fetch(`/api/v1/observingconditions/${deviceNumber}/connected`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'Connected=true'
-                    });
-                }
-            }
-        }
+        // Weather (ObservingConditions) devices honour auto_connect server-side when created
 
         // Connect switch device if auto_connect enabled
         if (config.switch_device && config.switch_device.enabled && config.switch_device.auto_connect) {
