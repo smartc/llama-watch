@@ -128,20 +128,11 @@ impl<T: Default> AlpacaResponse<T> {
     }
 }
 
-/// Standard PUT request form data
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct PutRequest {
-    #[serde(default)]
-    pub client_i_d: u32,
-    #[serde(default)]
-    pub client_transaction_i_d: u32,
-}
-
 /// Standard PUT form parameters. Alpaca PUT parameter names are case-sensitive
 /// (only GET query names are case-insensitive), so a wrongly cased ClientID or
 /// ClientTransactionID is ignored rather than echoed back.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct PutParams {
     #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
@@ -153,6 +144,7 @@ pub struct PutParams {
 /// case-sensitive like all PUT parameters; Connected also accepts other casings
 /// for compatibility with lenient clients.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct ConnectedRequest {
     #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
@@ -165,6 +157,7 @@ pub struct ConnectedRequest {
 
 /// Standard query parameters (case-insensitive per ASCOM spec)
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct QueryParams {
     #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
     #[serde(rename = "ClientID")]
@@ -176,6 +169,7 @@ pub struct QueryParams {
 
 /// Query parameters for switch methods that require an Id parameter
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct SwitchQueryParams {
     #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
     #[serde(rename = "ClientID")]
@@ -191,6 +185,7 @@ pub struct SwitchQueryParams {
 /// PUT request for Action method
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)] // Parsed so malformed requests get HTTP 400; Action/Command methods are not implemented
 pub struct ActionRequest {
     #[serde(default)]
     pub client_i_d: u32,
@@ -203,6 +198,7 @@ pub struct ActionRequest {
 /// PUT request for Command methods
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)] // Parsed so malformed requests get HTTP 400; Action/Command methods are not implemented
 pub struct CommandRequest {
     #[serde(default)]
     pub client_i_d: u32,

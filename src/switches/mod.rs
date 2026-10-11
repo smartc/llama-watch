@@ -7,10 +7,10 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::config::models::{
-    AppConfig, SwitchConfig, SwitchLogic, SwitchSourceStatus, SwitchStatus,
+    AppConfig, SwitchConfig, SwitchSourceStatus, SwitchStatus,
 };
 use crate::monitors::MonitorState;
 
@@ -124,7 +124,7 @@ impl SwitchManager {
 
         let mut results = Vec::new();
 
-        for (id, switch_state) in &mut self.switches {
+        for switch_state in self.switches.values_mut() {
             let status = Self::evaluate_switch(switch_state, &all_statuses, now);
             results.push(status);
         }
@@ -300,12 +300,6 @@ impl SwitchManager {
         self.evaluate_all().await
     }
 
-    /// Get switch IDs in order (for consistent ASCOM indexing)
-    pub fn get_switch_ids(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.switches.keys().cloned().collect();
-        ids.sort(); // Consistent ordering
-        ids
-    }
 }
 
 pub type SharedSwitchManager = Arc<RwLock<SwitchManager>>;

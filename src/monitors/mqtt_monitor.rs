@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use jsonpath_rust::JsonPathFinder;
 use parking_lot::RwLock;
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
@@ -363,10 +363,6 @@ impl MqttMonitorManager {
             .values()
             .map(|m| m.get_status())
             .collect()
-    }
-
-    pub fn get_status(&self, id: &str) -> Option<MonitorStatus> {
-        self.monitors.get(id).map(|m| m.get_status())
     }
 
     pub fn restore_state(&self, id: &str, old_status: &MonitorStatus) -> Option<()> {

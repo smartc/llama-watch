@@ -206,6 +206,7 @@ pub async fn get_averageperiod(
 
 // PUT /api/v1/observingconditions/{device}/averageperiod
 #[derive(serde::Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct AveragePeriodRequest {
     #[serde(default)]
     #[serde(rename = "ClientID")]
@@ -250,6 +251,7 @@ pub async fn put_averageperiod(
 
 // GET /api/v1/observingconditions/{device}/sensordescription
 #[derive(serde::Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct SensorDescriptionQuery {
     #[serde(default)]
     #[serde(rename = "ClientID")]
@@ -300,6 +302,7 @@ pub async fn get_sensordescription(
 
 // GET /api/v1/observingconditions/{device}/timesincelastupdate
 #[derive(serde::Deserialize)]
+#[allow(dead_code)] // ClientID is parsed as part of the Alpaca request but not used
 pub struct TimeSinceQuery {
     #[serde(default)]
     #[serde(rename = "ClientID")]

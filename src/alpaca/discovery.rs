@@ -7,15 +7,11 @@ use tracing::{info, error, warn};
 /// Listens on UDP port 32227 for discovery broadcasts and responds with server information
 pub struct DiscoveryService {
     alpaca_port: u16,
-    device_name: String,
 }
 
 impl DiscoveryService {
-    pub fn new(alpaca_port: u16, device_name: String) -> Self {
-        Self {
-            alpaca_port,
-            device_name,
-        }
+    pub fn new(alpaca_port: u16) -> Self {
+        Self { alpaca_port }
     }
 
     /// Start the discovery service in a background task

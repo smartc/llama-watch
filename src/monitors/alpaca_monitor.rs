@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::{
     alpaca::models::AlpacaResponse,
@@ -283,10 +283,6 @@ impl AlpacaMonitorManager {
             .values()
             .map(|m| m.get_status())
             .collect()
-    }
-
-    pub fn get_status(&self, id: &str) -> Option<MonitorStatus> {
-        self.monitors.get(id).map(|m| m.get_status())
     }
 
     pub fn restore_state(&self, id: &str, old_status: &MonitorStatus) -> Option<()> {

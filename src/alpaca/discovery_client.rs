@@ -1,9 +1,9 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket, IpAddr};
+use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 
 /// Discovered Alpaca device information
 #[derive(Debug, Clone, Serialize, Deserialize)]

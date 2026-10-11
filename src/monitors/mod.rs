@@ -3,8 +3,6 @@ pub mod mqtt_monitor;
 
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use crate::config::models::{AppConfig, GroupLogic, MonitorGroupConfig, MonitorStatus};
 use alpaca_monitor::AlpacaMonitorManager;
@@ -364,24 +362,4 @@ impl MonitorState {
         statuses
     }
 
-    pub fn get_status(&self, id: &str) -> Option<MonitorStatus> {
-        self.mqtt_manager
-            .get_status(id)
-            .or_else(|| self.alpaca_manager.get_status(id))
-    }
-
-    /// Check if monitors are ready (configured and have received at least one value)
-    pub fn is_ready(&self) -> bool {
-        let statuses = self.get_all_statuses();
-
-        // Must have at least one monitor configured
-        if statuses.is_empty() {
-            return false;
-        }
-
-        // All monitors must have received at least one update
-        statuses.iter().all(|status| status.last_update.is_some())
-    }
 }
-
-pub type SharedMonitorState = Arc<RwLock<MonitorState>>;

@@ -585,6 +585,7 @@ pub async fn get_switchstep(
 
 /// PUT request for SetSwitch
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Parsed so malformed requests get HTTP 400; switches are read-only, so the values are unused
 pub struct SetSwitchRequest {
     #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
@@ -598,6 +599,7 @@ pub struct SetSwitchRequest {
 
 /// PUT request for SetSwitchValue
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Parsed so malformed requests get HTTP 400; switches are read-only, so the values are unused
 pub struct SetSwitchValueRequest {
     #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
@@ -611,6 +613,7 @@ pub struct SetSwitchValueRequest {
 
 /// PUT request for SetSwitchName
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // Parsed so malformed requests get HTTP 400; switches are read-only, so the values are unused
 pub struct SetSwitchNameRequest {
     #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,

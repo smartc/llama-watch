@@ -4,7 +4,7 @@ use sha2::{Sha256, Digest};
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use super::safety_monitor::{SafetyMonitor, SharedMonitorState};
+use super::safety_monitor::SafetyMonitor;
 use super::switch::SwitchDevice;
 use crate::weather::ObservingConditionsDevice;
 use super::models::{AlpacaResponse, QueryParams};
@@ -12,7 +12,6 @@ use super::models::{AlpacaResponse, QueryParams};
 /// Unified management state for all device types
 pub struct ManagementState {
     pub safety_monitor: Arc<SafetyMonitor>,
-    pub monitor_state: SharedMonitorState,
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
     pub switch_device: Option<Arc<SwitchDevice>>,
 }
