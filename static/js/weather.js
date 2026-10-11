@@ -221,8 +221,8 @@ function renderWeatherAggregateOrder() {
         return;
     }
     container.innerHTML = weatherAggregateOrder.map((entry, i) => `
-        <div class="form-row" style="align-items: center; margin-bottom: 6px;">
-            <label class="checkbox-group" style="flex: 1;">
+        <div class="priority-row">
+            <label class="checkbox-group">
                 <input type="checkbox" ${entry.included ? 'checked' : ''} onchange="weatherAggregateOrder[${i}].included = this.checked">
                 <span>${i + 1}. ${escapeHtml(weatherSourceName(entry.device_number))}</span>
             </label>
@@ -247,9 +247,9 @@ function renderWeatherAggregateProperties(propertySources) {
     `).join('');
 
     container.innerHTML = WEATHER_PROPERTIES.map(([key, label]) => `
-        <div class="form-row" style="align-items: center; margin-bottom: 6px;">
-            <div style="flex: 1;">${label}</div>
-            <select id="weather-aggregate-property-${key}" style="flex: 2;">
+        <div class="priority-row">
+            <div>${label}</div>
+            <select id="weather-aggregate-property-${key}">
                 <option value="default">Default priority</option>
                 ${sourceOptions}
             </select>

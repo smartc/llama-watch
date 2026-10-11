@@ -514,6 +514,41 @@ body {
 }
 
 /* Badge styles for weather device list */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: white;
+    vertical-align: middle;
+    background: #9e9e9e;
+}
+
+.badge-success, .badge-safe { background: #4caf50; }
+.badge-unsafe { background: #f44336; }
+.badge-warning { background: #ff9800; }
+.badge-info { background: #667eea; }
+.badge-secondary { background: #9e9e9e; }
+
+/* Aggregate weather device editor rows */
+.priority-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.priority-row > :first-child {
+    flex: 1;
+}
+
+.priority-row select {
+    flex: 1;
+    max-width: 360px;
+}
+
 .badge-tempest {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
