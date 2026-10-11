@@ -155,71 +155,11 @@ property_getter!(get_temperature, WeatherProperty::Temperature, f64);
 property_getter!(get_winddirection, WeatherProperty::WindDirection, f64);
 property_getter!(get_windgust, WeatherProperty::WindGust, f64);
 property_getter!(get_windspeed, WeatherProperty::WindSpeed, f64);
+property_getter!(get_cloudcover, WeatherProperty::CloudCover, f64);
+property_getter!(get_skyquality, WeatherProperty::SkyQuality, f64);
+property_getter!(get_skytemperature, WeatherProperty::SkyTemperature, f64);
 
-// Properties that are not implemented (will return error)
-pub async fn get_cloudcover(
-    Path(device): Path<u32>,
-    Query(params): Query<QueryParams>,
-    State(state): State<SharedObservingConditionsState>,
-) -> Response {
-    let dev = match get_device(&state.devices, device).await {
-        Ok(d) => d,
-        Err((status, msg)) => {
-            return (status, msg).into_response();
-        }
-    };
-
-    let server_id = dev.next_transaction_id();
-    Json(AlpacaResponse::<f64>::error(
-        params.client_transaction_i_d,
-        server_id,
-        ERROR_NOT_IMPLEMENTED,
-        "CloudCover is not implemented".to_string(),
-    )).into_response()
-}
-
-pub async fn get_skyquality(
-    Path(device): Path<u32>,
-    Query(params): Query<QueryParams>,
-    State(state): State<SharedObservingConditionsState>,
-) -> Response {
-    let dev = match get_device(&state.devices, device).await {
-        Ok(d) => d,
-        Err((status, msg)) => {
-            return (status, msg).into_response();
-        }
-    };
-
-    let server_id = dev.next_transaction_id();
-    Json(AlpacaResponse::<f64>::error(
-        params.client_transaction_i_d,
-        server_id,
-        ERROR_NOT_IMPLEMENTED,
-        "SkyQuality is not implemented".to_string(),
-    )).into_response()
-}
-
-pub async fn get_skytemperature(
-    Path(device): Path<u32>,
-    Query(params): Query<QueryParams>,
-    State(state): State<SharedObservingConditionsState>,
-) -> Response {
-    let dev = match get_device(&state.devices, device).await {
-        Ok(d) => d,
-        Err((status, msg)) => {
-            return (status, msg).into_response();
-        }
-    };
-
-    let server_id = dev.next_transaction_id();
-    Json(AlpacaResponse::<f64>::error(
-        params.client_transaction_i_d,
-        server_id,
-        ERROR_NOT_IMPLEMENTED,
-        "SkyTemperature is not implemented".to_string(),
-    )).into_response()
-}
-
+// Properties that are not implemented by any source (will return error)
 pub async fn get_starfwhm(
     Path(device): Path<u32>,
     Query(params): Query<QueryParams>,

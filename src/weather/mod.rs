@@ -6,10 +6,12 @@
 // - Mapping WU API response fields to a WeatherObservation (see observation.rs)
 // - Adding periodic polling similar to how Alpaca monitors work
 
+pub mod alpaca;
 pub mod ecowitt;
 pub mod observation;
 pub mod tempest;
 pub mod observing_conditions;
+pub mod pollers;
 pub mod service;
 pub mod weather_monitor;
 

@@ -172,11 +172,11 @@ fn source_readings(store: &WeatherStore, device: &WeatherDeviceConfig) -> Readin
     let Some(obs) = store.observation_for(&device.source) else {
         return Readings::new();
     };
-    supported_properties(&device.source).iter()
-        .filter_map(|&property| {
+    supported_properties(&device.source).into_iter()
+        .filter_map(|property| {
             obs.get(property).map(|value| (property, Reading {
                 value,
-                timestamp: obs.timestamp,
+                timestamp: obs.measured_at(property),
                 source_device: device.device_number,
             }))
         })
@@ -279,6 +279,37 @@ mod tests {
         config.weather_aggregate.as_mut().unwrap().source_priority = vec![2];
         let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, now);
         assert!(!readings.contains_key(&WeatherProperty::SkyBrightness));
+    }
+
+    #[test]
+    fn alpaca_source_uses_per_property_measurement_time() {
+        let now = Utc::now();
+        let (mut store, mut config) = setup(now, 10, 10);
+        let alpaca = WeatherDataSource::Alpaca {
+            host: "skycon".into(),
+            port: 11111,
+            device_number: 0,
+            poll_interval_seconds: 30,
+            properties: vec![WeatherProperty::SkyQuality, WeatherProperty::Temperature],
+        };
+        config.weather_devices.insert(3, source(3, alpaca));
+        config.weather_aggregate.as_mut().unwrap()
+            .property_sources.insert(WeatherProperty::Temperature, vec![3]);
+
+        // SkyQuality measured 400s ago although the poll itself just happened
+        store.update(WeatherStore::alpaca_key("skycon", 11111, 0), WeatherObservation::new(
+            now,
+            BTreeMap::from([(WeatherProperty::SkyQuality, 20.5), (WeatherProperty::Temperature, 3.0)]),
+        ).with_measured_at(BTreeMap::from([(WeatherProperty::SkyQuality, now - Duration::seconds(400))])));
+
+        let readings = resolve_readings(&store, &config, WeatherDeviceKind::Aggregate, now);
+        assert_eq!((now - readings[&WeatherProperty::SkyQuality].timestamp).num_seconds(), 400);
+        assert_eq!(readings[&WeatherProperty::Temperature].source_device, 3);
+        assert!(device_supported_properties(&config, WeatherDeviceKind::Aggregate)
+            .contains(&WeatherProperty::SkyQuality));
+        // Tempest and Ecowitt don't provide sky quality
+        assert!(!device_supported_properties(&config, WeatherDeviceKind::Source(1))
+            .contains(&WeatherProperty::SkyQuality));
     }
 
     #[test]

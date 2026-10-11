@@ -120,6 +120,28 @@
       "enabled": true,
       "auto_connect": true,
       "expose_device": true
+    },
+    "3": {
+      "device_number": 3,
+      "name": "Sky Conditions",
+      "description": "ASCOM Alpaca ObservingConditions device (sky quality and cloud sensor)",
+      "source": {
+        "type": "alpaca",
+        "host": "skycon.local",
+        "port": 11111,
+        "device_number": 0,
+        "poll_interval_seconds": 30,
+        "properties": [
+          "temperature",
+          "sky_brightness",
+          "sky_quality",
+          "sky_temperature",
+          "cloud_cover"
+        ]
+      },
+      "enabled": true,
+      "auto_connect": true,
+      "expose_device": true
     }
   },
   "weather_aggregate": {
@@ -138,6 +160,11 @@
         1
       ],
       "wind_direction": [
+        2,
+        1
+      ],
+      "temperature": [
+        3,
         2,
         1
       ]
@@ -168,6 +195,11 @@
       },
       "rain_rate": {
         "threshold": 0.1,
+        "operator": "greaterthan",
+        "safe_when_true": false
+      },
+      "cloud_cover": {
+        "threshold": 50.0,
         "operator": "greaterthan",
         "safe_when_true": false
       }

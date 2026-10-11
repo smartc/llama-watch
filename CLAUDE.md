@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **LLAMA Safety Monitor** (Lightweight Logical ASCOM MQTT Alpaca Safety Monitor) is a Rust-based ASCOM Alpaca server that implements two device types:
 
 1. **SafetyMonitor** - Aggregates multiple data sources to determine observatory safety
-2. **ObservingConditions** - Provides weather data from Tempest stations and Ecowitt gateways, with an aggregate device (0) that combines them
+2. **ObservingConditions** - Provides weather data from Tempest stations, Ecowitt gateways and other Alpaca ObservingConditions devices, with an aggregate device (0) that combines them
 
 The system monitors MQTT feeds, ASCOM Alpaca endpoints, UDP weather broadcasts and polled weather gateways to provide real-time safety status for astronomical observatory operations.
 
@@ -80,7 +80,9 @@ The application is organized into distinct modules with clear separation of conc
 **`src/weather/`** - Weather device implementations
 - `observation.rs` - `WeatherProperty`, source-independent `WeatherObservation` (metric units), `WeatherStore` (latest observation per station)
 - `tempest.rs` - `TempestListener` receives UDP broadcasts from Tempest weather stations
-- `ecowitt.rs` - `EcowittPollers` poll Ecowitt gateways' local `/get_livedata_info` API and convert units to metric
+- `ecowitt.rs` - polls Ecowitt gateways' local `/get_livedata_info` API and converts units to metric
+- `alpaca.rs` - polls remote Alpaca ObservingConditions devices (value + per-property `timesincelastupdate`); `detect()` lists implemented properties
+- `pollers.rs` - `SourcePollers` runs one polling task per enabled Ecowitt/Alpaca source
 - `observing_conditions.rs` - `ObservingConditionsDevice`, `WeatherDataAccessor`, and aggregate resolution (`resolve_readings`)
 - `weather_monitor.rs` - `WeatherMonitorManager` evaluates weather safety thresholds
 - `service.rs` - `WeatherService` rebuilds devices, monitors and pollers from config (`apply_config`)
@@ -111,7 +113,7 @@ Arc<RwLock<MonitorState>>
 
 // Weather data pipeline
 TempestListener (UDP) ─┐
-EcowittPollers (HTTP) ─┴─> Arc<RwLock<WeatherStore>>  // latest WeatherObservation per station
+SourcePollers (HTTP) ──┴─> Arc<RwLock<WeatherStore>>  // latest WeatherObservation per station
                              └─ WeatherDataAccessor (+ shared AppConfig) resolves Readings per device
                                   ├─ ObservingConditions API handlers
                                   └─ WeatherMonitorManager (evaluates safety thresholds)
@@ -120,7 +122,7 @@ EcowittPollers (HTTP) ─┴─> Arc<RwLock<WeatherStore>>  // latest WeatherObs
 WeatherService
   ├─ devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>
   ├─ monitors: Arc<RwLock<WeatherMonitorManager>>
-  └─ Ecowitt pollers
+  └─ SourcePollers (Ecowitt, Alpaca)
 ```
 
 **State is shared across:**
@@ -199,7 +201,8 @@ This prevents brief UNSAFE blips when adding/removing monitors.
 **Supported properties:**
 - Temperature, Humidity, DewPoint, Pressure
 - WindSpeed, WindGust, WindDirection
-- RainRate, SkyBrightness (Tempest only)
+- RainRate, SkyBrightness (lux)
+- SkyQuality (mag/arcsec²), SkyTemperature, CloudCover (from Alpaca sources)
 - Solar radiation and UV are tracked and shown in the web UI but have no ASCOM property
 
 **Data sources:**
@@ -207,10 +210,13 @@ This prevents brief UNSAFE blips when adding/removing monitors.
 - Ecowitt: `GET http://<host>/get_livedata_info` polled every `poll_interval_seconds` (GW1100/GW2000/GW3000).
   Values carry units from the gateway's display settings and are converted to metric; unknown units or `--` are dropped.
   Station pressure comes from `wh25.abs`. Test fixture: `src/weather/testdata/ecowitt_gw3000_livedata.json`
+- Alpaca: any ASCOM ObservingConditions device, polled with GET only (Connected is never changed). The source config
+  lists the `properties` to take, chosen with the UI's Detect button (`POST /api/weather/alpaca/detect`). Each value is
+  timestamped from the device's `timesincelastupdate`, so a stuck sensor goes stale even while polls succeed
 - Future: Weather Underground API (structure exists, not implemented)
 
 **Property mapping:**
-- Tempest `illuminance` (lux) → `SkyBrightness` (ASCOM defines SkyBrightness in lux; SkyQuality is mag/arcsec² and is not implemented)
+- Tempest `illuminance` (lux) → `SkyBrightness` (ASCOM defines SkyBrightness in lux; SkyQuality is mag/arcsec² and comes only from sources that measure it)
 - Tempest `rain_accumulation` (rain during the report interval) → `RainRate` (scaled to mm/hour)
 
 ### Management API
@@ -321,7 +327,8 @@ Static files in `static/`:
 - `POST /reload` - Reload monitors from current config (call after saving config)
 - `GET /status` - Get all monitor statuses
 - `GET /logs` - List available log files (when logging enabled)
-- `GET|POST /api/weather/devices`, `GET|PUT|DELETE /api/weather/devices/:id`, `POST .../:id/toggle` - Weather sources (POST with `device_number: 0` assigns the next free number)
+- `GET|POST /api/weather/devices`, `GET|PUT|DELETE /api/weather/devices/:id`, `POST .../:id/toggle` - Weather sources (POST with `device_number: 0` assigns the next free number; a new source is appended to an explicit aggregate `source_priority`)
+- `POST /api/weather/alpaca/detect` - `{host, port, device_number}` → properties an Alpaca ObservingConditions device implements
 - `GET|PUT /api/weather/aggregate` - Aggregate device 0 configuration
 - `GET /api/weather/status` - Readings (with source per measurement) and safety status for device 0 and each enabled source
 - Weather changes apply immediately via `WeatherService::apply_config()` (no restart)
@@ -336,7 +343,8 @@ Static files in `static/`:
 ### Weather Data Freshness
 - Tempest broadcasts are received asynchronously via UDP and stamped with the observation time
 - Ecowitt observations are stamped with the time of the successful poll (the payload has no timestamp)
-- `WeatherStore` keys observations as `tempest:<serial>` / `ecowitt:<host>`; a Tempest source without a serial uses the most recently heard Tempest
+- Alpaca observations carry per-property measurement times (`WeatherObservation::measured_at`)
+- `WeatherStore` keys observations as `tempest:<serial>` / `ecowitt:<host>` / `alpaca:<host>:<port>:<device>`; a Tempest source without a serial uses the most recently heard Tempest
 - `timeSinceLastUpdate` is per property, from the reading actually served (for device 0, the chosen source)
 - Never hold the config `RwLock` while calling `WeatherDataAccessor::readings()` (it locks config itself);
   use `readings_with(&config, ...)` instead, since tokio's RwLock is write-preferring and nested reads can deadlock
@@ -362,17 +370,18 @@ Static files in `static/`:
 
 ### Adding a New Weather Property
 1. Add a variant to `WeatherProperty` in `weather/observation.rs` (and to `ALL`, labels, units, ASCOM name)
-2. Populate it in each source's conversion (`TempestObservation::to_observation`, `ecowitt::parse_livedata`)
+2. Populate it in each source's conversion (`TempestObservation::to_observation`, `ecowitt::parse_livedata`); Alpaca sources pick it up from its ASCOM name
 3. Add it to `supported_properties()` for the source types that provide it
 4. Add an API endpoint in `alpaca/observing_conditions.rs` (`property_getter!`) if it is an ASCOM property
-5. For safety thresholds: add a field to `WeatherSafetyThresholds` and to `WeatherSafetyThresholds::configured()`
+5. For safety thresholds: add a field to `WeatherSafetyThresholds` and to `WeatherSafetyThresholds::configured()`,
+   a threshold block in `static/index.html` and the key in `WEATHER_THRESHOLDS`
 6. Add it to `WEATHER_PROPERTIES` in `static/js/weather.js`
 
 ### Adding a New Weather Source Type
 1. Add a variant to `WeatherDataSource` in `config/models.rs`
 2. Write observations into `WeatherStore` under a unique key and resolve it in `WeatherStore::observation_for`
 3. Declare its properties in `supported_properties()`
-4. If it is polled, start/stop it from `WeatherService::apply_config`
+4. If it is polled, add it to `SourcePollers::sync` in `weather/pollers.rs`
 
 ### Testing ASCOM Compliance
 - Use ASCOM Remote or ASCOM Conform tool for validation

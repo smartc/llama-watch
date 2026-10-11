@@ -534,6 +534,7 @@ fn source_type(source: &WeatherDataSource) -> String {
     match source {
         WeatherDataSource::Tempest { .. } => "tempest",
         WeatherDataSource::Ecowitt { .. } => "ecowitt",
+        WeatherDataSource::Alpaca { .. } => "alpaca",
         WeatherDataSource::WeatherUnderground { .. } => "weatherunderground",
     }.to_string()
 }
@@ -600,6 +601,13 @@ pub async fn create_weather_device(
             return Err((StatusCode::CONFLICT, format!("Weather device {} already exists", device_config.device_number)));
         }
         config.weather_devices.insert(device_config.device_number, device_config.clone());
+        // An explicit priority list only lists the sources that existed when it was
+        // saved; add the new source at the end so the aggregate uses it
+        if let Some(aggregate) = config.weather_aggregate.as_mut() {
+            if !aggregate.source_priority.is_empty() {
+                aggregate.source_priority.push(device_config.device_number);
+            }
+        }
         created = Some(device_config);
         Ok(())
     }).await?;
@@ -764,6 +772,28 @@ pub async fn get_weather_status(
     }
 
     Json(response)
+}
+
+#[derive(Deserialize)]
+pub struct AlpacaDetectRequest {
+    pub host: String,
+    #[serde(default = "default_alpaca_detect_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub device_number: u32,
+}
+
+fn default_alpaca_detect_port() -> u16 {
+    11111
+}
+
+// POST /api/weather/alpaca/detect - List the properties an Alpaca ObservingConditions device implements
+pub async fn detect_alpaca_weather_device(
+    Json(req): Json<AlpacaDetectRequest>,
+) -> Result<Json<crate::weather::alpaca::DetectedDevice>, (StatusCode, String)> {
+    crate::weather::alpaca::detect(&req.host, req.port, req.device_number).await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("{:#}", e)))
 }
 
 // POST /api/weather/devices/:id/connect - Connect/disconnect an ObservingConditions device

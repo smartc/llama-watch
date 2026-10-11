@@ -5,8 +5,10 @@ let weatherDevices = [];
 let weatherAggregate = null;
 let weatherFormMode = 'source'; // 'source' or 'aggregate'
 let weatherAggregateOrder = []; // [{device_number, included}] while editing the aggregate
+let alpacaProperties = []; // [{property, label, value, description, checked}] while editing an Alpaca source
 
-const WEATHER_THRESHOLDS = ['temperature', 'humidity', 'wind_speed', 'wind_gust', 'rain_rate', 'sky_brightness'];
+const WEATHER_THRESHOLDS = ['temperature', 'humidity', 'wind_speed', 'wind_gust', 'rain_rate', 'sky_brightness',
+    'sky_quality', 'sky_temperature', 'cloud_cover'];
 
 // Keys match WeatherProperty in src/weather/observation.rs
 const WEATHER_PROPERTIES = [
@@ -19,6 +21,9 @@ const WEATHER_PROPERTIES = [
     ['wind_direction', 'Wind Direction'],
     ['rain_rate', 'Rain Rate'],
     ['sky_brightness', 'Sky Brightness'],
+    ['sky_quality', 'Sky Quality'],
+    ['sky_temperature', 'Sky Temperature'],
+    ['cloud_cover', 'Cloud Cover'],
     ['solar_radiation', 'Solar Radiation'],
     ['uv_index', 'UV Index']
 ];
@@ -299,6 +304,12 @@ function resetWeatherDeviceForm() {
     document.getElementById('weather-device-tempest-serial').value = '';
     document.getElementById('weather-device-ecowitt-host').value = '';
     document.getElementById('weather-device-ecowitt-interval').value = 30;
+    document.getElementById('weather-device-alpaca-host').value = '';
+    document.getElementById('weather-device-alpaca-port').value = 11111;
+    document.getElementById('weather-device-alpaca-device').value = 0;
+    document.getElementById('weather-device-alpaca-interval').value = 30;
+    alpacaProperties = [];
+    renderAlpacaProperties();
     document.getElementById('weather-device-wu-station').value = '';
     document.getElementById('weather-device-wu-apikey').value = '';
     document.getElementById('weather-device-enabled').checked = true;
@@ -324,6 +335,18 @@ function populateWeatherDeviceForm(device) {
         document.getElementById('weather-device-source-type').value = 'ecowitt';
         document.getElementById('weather-device-ecowitt-host').value = device.source.host || '';
         document.getElementById('weather-device-ecowitt-interval').value = device.source.poll_interval_seconds || 30;
+    } else if (device.source.type === 'alpaca') {
+        document.getElementById('weather-device-source-type').value = 'alpaca';
+        document.getElementById('weather-device-alpaca-host').value = device.source.host || '';
+        document.getElementById('weather-device-alpaca-port').value = device.source.port || 11111;
+        document.getElementById('weather-device-alpaca-device').value = device.source.device_number || 0;
+        document.getElementById('weather-device-alpaca-interval').value = device.source.poll_interval_seconds || 30;
+        alpacaProperties = (device.source.properties || []).map(property => ({
+            property,
+            label: weatherPropertyLabel(property),
+            checked: true
+        }));
+        renderAlpacaProperties();
     } else if (device.source.type === 'weatherunderground') {
         document.getElementById('weather-device-source-type').value = 'weatherunderground';
         document.getElementById('weather-device-wu-station').value = device.source.station_id || '';
@@ -376,7 +399,83 @@ function updateWeatherSourceFields() {
     const sourceType = document.getElementById('weather-device-source-type').value;
     document.getElementById('tempest-fields').style.display = sourceType === 'tempest' ? 'block' : 'none';
     document.getElementById('ecowitt-fields').style.display = sourceType === 'ecowitt' ? 'block' : 'none';
+    document.getElementById('alpaca-fields').style.display = sourceType === 'alpaca' ? 'block' : 'none';
     document.getElementById('wu-fields').style.display = sourceType === 'weatherunderground' ? 'block' : 'none';
+}
+
+function weatherPropertyLabel(key) {
+    const entry = WEATHER_PROPERTIES.find(([k]) => k === key);
+    return entry ? entry[1] : key;
+}
+
+function renderAlpacaProperties() {
+    const container = document.getElementById('weather-device-alpaca-properties');
+    if (alpacaProperties.length === 0) {
+        container.innerHTML = '<p class="no-data">No properties selected yet. Click "Detect Properties".</p>';
+        return;
+    }
+    container.innerHTML = alpacaProperties.map((p, i) => {
+        const value = p.value !== undefined ? `<strong>${p.value}</strong>` : '';
+        let note = '';
+        if (p.description) {
+            note = escapeHtml(p.description);
+        } else if (p.value !== undefined) {
+            note = '<em>The device doesn\'t describe this sensor; check the value is real before using it</em>';
+        }
+        return `
+            <div class="priority-row">
+                <label class="checkbox-group">
+                    <input type="checkbox" ${p.checked ? 'checked' : ''} onchange="alpacaProperties[${i}].checked = this.checked">
+                    <span>${escapeHtml(p.label)}</span>
+                </label>
+                <div style="flex: 3;">${value} <span class="info-text">${note}</span></div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function detectAlpacaProperties() {
+    const host = document.getElementById('weather-device-alpaca-host').value.trim();
+    if (!host) {
+        showNotification('Alpaca host is required', 'error');
+        return;
+    }
+    const container = document.getElementById('weather-device-alpaca-properties');
+    container.innerHTML = '<p class="no-data">Reading device...</p>';
+    try {
+        const response = await fetch('/api/weather/alpaca/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                host,
+                port: parseInt(document.getElementById('weather-device-alpaca-port').value) || 11111,
+                device_number: parseInt(document.getElementById('weather-device-alpaca-device').value) || 0
+            })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const detected = await response.json();
+
+        // Keep earlier choices; otherwise select properties the device describes
+        const previous = new Map(alpacaProperties.map(p => [p.property, p.checked]));
+        alpacaProperties = detected.properties.map(p => ({
+            property: p.property,
+            label: weatherPropertyLabel(p.property),
+            value: p.value,
+            description: p.description,
+            checked: previous.has(p.property) ? previous.get(p.property) : p.description !== null
+        }));
+        renderAlpacaProperties();
+
+        const nameInput = document.getElementById('weather-device-name');
+        if (!nameInput.value.trim() && detected.name) nameInput.value = detected.name;
+        const descriptionInput = document.getElementById('weather-device-description');
+        if (!descriptionInput.value.trim() && detected.description) descriptionInput.value = detected.description;
+    } catch (error) {
+        console.error('Error detecting Alpaca properties:', error);
+        alpacaProperties = [];
+        renderAlpacaProperties();
+        showNotification('Could not read Alpaca device: ' + error.message, 'error');
+    }
 }
 
 function toggleWeatherSafetyFields() {
@@ -437,6 +536,25 @@ async function saveWeatherDevice() {
                 type: 'ecowitt',
                 host,
                 poll_interval_seconds: parseInt(document.getElementById('weather-device-ecowitt-interval').value) || 30
+            };
+        } else if (sourceType === 'alpaca') {
+            const host = document.getElementById('weather-device-alpaca-host').value.trim();
+            const properties = alpacaProperties.filter(p => p.checked).map(p => p.property);
+            if (!host) {
+                showNotification('Alpaca host is required', 'error');
+                return;
+            }
+            if (properties.length === 0) {
+                showNotification('Select at least one property (use "Detect Properties")', 'error');
+                return;
+            }
+            source = {
+                type: 'alpaca',
+                host,
+                port: parseInt(document.getElementById('weather-device-alpaca-port').value) || 11111,
+                device_number: parseInt(document.getElementById('weather-device-alpaca-device').value) || 0,
+                poll_interval_seconds: parseInt(document.getElementById('weather-device-alpaca-interval').value) || 30,
+                properties
             };
         } else {
             source = {

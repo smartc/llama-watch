@@ -412,6 +412,7 @@
                         <select id="weather-device-source-type" onchange="updateWeatherSourceFields()">
                             <option value="tempest">Tempest Weather Station (UDP)</option>
                             <option value="ecowitt">Ecowitt Gateway (HTTP polling)</option>
+                            <option value="alpaca">ASCOM Alpaca ObservingConditions (HTTP polling)</option>
                             <option value="weatherunderground" disabled>Weather Underground (Future)</option>
                         </select>
                     </div>
@@ -420,6 +421,31 @@
                             <label>Tempest Serial Number (optional)</label>
                             <input type="text" id="weather-device-tempest-serial" placeholder="e.g., ST-00012345">
                             <div class="info-text">Leave empty to accept data from any Tempest device on the network</div>
+                        </div>
+                    </div>
+                    <div id="alpaca-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Alpaca Host *</label>
+                                <input type="text" id="weather-device-alpaca-host" placeholder="e.g., skycon.local or 192.168.1.60">
+                            </div>
+                            <div class="form-group">
+                                <label>Port</label>
+                                <input type="number" id="weather-device-alpaca-port" value="11111" min="1" max="65535">
+                            </div>
+                            <div class="form-group">
+                                <label>Remote Device Number</label>
+                                <input type="number" id="weather-device-alpaca-device" value="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-alpaca-interval" value="30" min="5">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <button type="button" class="btn btn-secondary" onclick="detectAlpacaProperties()">Detect Properties</button>
+                            <div class="info-text">Reads the device and lists the ObservingConditions properties it implements. Only checked properties are used.</div>
+                            <div id="weather-device-alpaca-properties" style="margin-top: 10px;"></div>
                         </div>
                     </div>
                     <div id="ecowitt-fields" style="display: none;">
@@ -683,6 +709,96 @@
                                     <div class="form-group">
                                         <label class="checkbox-group">
                                             <input type="checkbox" id="weather-threshold-sky_brightness-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sky Quality Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-sky_quality-enabled" onchange="toggleThresholdFields('sky_quality')">
+                                <span>Sky Quality Threshold</span>
+                            </label>
+                            <div id="weather-threshold-sky_quality-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (mag/arcsec²)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_quality" value="18">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-sky_quality-operator">
+                                            <option value="greaterthan">Greater Than</option>
+                                            <option value="lessthan" selected>Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-sky_quality-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sky Temperature Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-sky_temperature-enabled" onchange="toggleThresholdFields('sky_temperature')">
+                                <span>Sky Temperature Threshold</span>
+                            </label>
+                            <div id="weather-threshold-sky_temperature-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (°C)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-sky_temperature" value="-15">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-sky_temperature-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-sky_temperature-safe-when-true">
+                                            <span>Safe when TRUE</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cloud Cover Threshold -->
+                        <div class="threshold-section">
+                            <label class="checkbox-group">
+                                <input type="checkbox" id="weather-threshold-cloud_cover-enabled" onchange="toggleThresholdFields('cloud_cover')">
+                                <span>Cloud Cover Threshold</span>
+                            </label>
+                            <div id="weather-threshold-cloud_cover-fields" class="threshold-fields" style="display: none;">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Threshold (%)</label>
+                                        <input type="number" step="0.1" id="weather-threshold-cloud_cover" value="50">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Operator</label>
+                                        <select id="weather-threshold-cloud_cover-operator">
+                                            <option value="greaterthan" selected>Greater Than</option>
+                                            <option value="lessthan">Less Than</option>
+                                            <option value="equal">Equal</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="checkbox-group">
+                                            <input type="checkbox" id="weather-threshold-cloud_cover-safe-when-true">
                                             <span>Safe when TRUE</span>
                                         </label>
                                     </div>

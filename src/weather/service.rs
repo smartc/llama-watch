@@ -4,7 +4,7 @@ use tokio::sync::{Mutex, RwLock};
 use tracing::info;
 
 use crate::config::models::AppConfig;
-use super::ecowitt::EcowittPollers;
+use super::pollers::SourcePollers;
 use super::observing_conditions::{ObservingConditionsDevice, WeatherDataAccessor, WeatherDeviceKind};
 use super::weather_monitor::WeatherMonitorManager;
 
@@ -17,7 +17,7 @@ pub struct WeatherService {
     pub data: Arc<WeatherDataAccessor>,
     pub devices: ObservingConditionsDevices,
     pub monitors: Arc<RwLock<WeatherMonitorManager>>,
-    pollers: Mutex<EcowittPollers>,
+    pollers: Mutex<SourcePollers>,
 }
 
 impl WeatherService {
@@ -26,7 +26,7 @@ impl WeatherService {
             data,
             devices: Arc::new(RwLock::new(HashMap::new())),
             monitors: Arc::new(RwLock::new(WeatherMonitorManager::new())),
-            pollers: Mutex::new(EcowittPollers::default()),
+            pollers: Mutex::new(SourcePollers::default()),
         }
     }
 

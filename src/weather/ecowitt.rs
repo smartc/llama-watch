@@ -6,12 +6,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::time::Duration;
-use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::config::models::{WeatherDataSource, WeatherDeviceConfig};
 use super::observation::{SharedWeatherStore, WeatherObservation, WeatherProperty, WeatherStore};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -132,7 +130,10 @@ fn to_metric(property: WeatherProperty, value: f64, unit: &str) -> Option<f64> {
             _ => return unknown_unit(property, &unit),
         },
         WeatherProperty::Humidity | WeatherProperty::WindDirection | WeatherProperty::UvIndex => value,
-        WeatherProperty::SkyBrightness => return None,
+        WeatherProperty::SkyBrightness
+        | WeatherProperty::SkyQuality
+        | WeatherProperty::SkyTemperature
+        | WeatherProperty::CloudCover => return None,
     };
     Some(converted)
 }
@@ -143,7 +144,7 @@ fn unknown_unit(property: WeatherProperty, unit: &str) -> Option<f64> {
 }
 
 /// Polls one Ecowitt gateway and writes its observations to the weather store
-async fn poll_gateway(host: String, interval_seconds: u64, store: SharedWeatherStore) {
+pub async fn poll_gateway(host: String, interval_seconds: u64, store: SharedWeatherStore) {
     let url = livedata_url(&host);
     let key = WeatherStore::ecowitt_key(&host);
     let interval = Duration::from_secs(interval_seconds.max(MIN_POLL_INTERVAL_SECONDS));
@@ -182,40 +183,6 @@ async fn poll_gateway(host: String, interval_seconds: u64, store: SharedWeatherS
         }
 
         tokio::time::sleep(interval).await;
-    }
-}
-
-/// Runs one polling task per enabled Ecowitt device
-#[derive(Default)]
-pub struct EcowittPollers {
-    tasks: HashMap<u32, (WeatherDataSource, JoinHandle<()>)>,
-}
-
-impl EcowittPollers {
-    /// Start, stop or restart polling tasks to match the configured devices
-    pub fn sync(&mut self, devices: &HashMap<u32, WeatherDeviceConfig>, store: &SharedWeatherStore) {
-        let wanted: HashMap<u32, &WeatherDataSource> = devices.iter()
-            .filter(|(_, d)| d.enabled && matches!(d.source, WeatherDataSource::Ecowitt { .. }))
-            .map(|(n, d)| (*n, &d.source))
-            .collect();
-
-        self.tasks.retain(|number, (source, task)| {
-            let keep = wanted.get(number).is_some_and(|w| *w == source);
-            if !keep {
-                task.abort();
-            }
-            keep
-        });
-
-        for (number, source) in wanted {
-            if self.tasks.contains_key(&number) {
-                continue;
-            }
-            if let WeatherDataSource::Ecowitt { host, poll_interval_seconds } = source {
-                let task = tokio::spawn(poll_gateway(host.clone(), *poll_interval_seconds, store.clone()));
-                self.tasks.insert(number, (source.clone(), task));
-            }
-        }
     }
 }
 

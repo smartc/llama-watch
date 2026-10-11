@@ -229,15 +229,33 @@ impl AppConfig {
                     device.name, number, device.device_number
                 ));
             }
-            if let WeatherDataSource::Ecowitt { host, poll_interval_seconds } = &device.source {
+            let polled = match &device.source {
+                WeatherDataSource::Ecowitt { host, poll_interval_seconds } => Some((host, *poll_interval_seconds)),
+                WeatherDataSource::Alpaca { host, poll_interval_seconds, .. } => Some((host, *poll_interval_seconds)),
+                _ => None,
+            };
+            if let Some((host, poll_interval_seconds)) = polled {
                 if host.trim().is_empty() {
                     return Err(anyhow::anyhow!(
-                        "Weather device '{}' has no Ecowitt gateway host", device.name
+                        "Weather device '{}' has no host", device.name
                     ));
                 }
-                if *poll_interval_seconds < 5 {
+                if poll_interval_seconds < 5 {
                     return Err(anyhow::anyhow!(
                         "Weather device '{}' poll interval must be at least 5 seconds", device.name
+                    ));
+                }
+            }
+            if let WeatherDataSource::Alpaca { properties, .. } = &device.source {
+                if properties.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' has no properties selected", device.name
+                    ));
+                }
+                if let Some(p) = properties.iter().find(|p| p.ascom_name().is_none()) {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}': {} is not an ASCOM ObservingConditions property",
+                        device.name, p.label()
                     ));
                 }
             }
@@ -457,6 +475,18 @@ pub enum WeatherDataSource {
         #[serde(default = "default_ecowitt_poll_interval")]
         poll_interval_seconds: u64,
     },
+    /// ASCOM Alpaca ObservingConditions device polled over HTTP
+    Alpaca {
+        host: String,
+        #[serde(default = "default_alpaca_port")]
+        port: u16,
+        #[serde(default)]
+        device_number: u32, // Device number on the remote Alpaca server
+        #[serde(default = "default_ecowitt_poll_interval")]
+        poll_interval_seconds: u64,
+        #[serde(default)]
+        properties: Vec<WeatherProperty>, // Properties to take from this device
+    },
     WeatherUnderground {
         station_id: String,
         api_key: String,
@@ -483,6 +513,12 @@ pub struct WeatherSafetyThresholds {
     pub wind_gust: Option<ThresholdConfig>,
     #[serde(default)]
     pub rain_rate: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub sky_quality: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub sky_temperature: Option<ThresholdConfig>,
+    #[serde(default)]
+    pub cloud_cover: Option<ThresholdConfig>,
 }
 
 impl WeatherSafetyThresholds {
@@ -495,6 +531,9 @@ impl WeatherSafetyThresholds {
             (WeatherProperty::WindSpeed, &self.wind_speed),
             (WeatherProperty::WindGust, &self.wind_gust),
             (WeatherProperty::RainRate, &self.rain_rate),
+            (WeatherProperty::SkyQuality, &self.sky_quality),
+            (WeatherProperty::SkyTemperature, &self.sky_temperature),
+            (WeatherProperty::CloudCover, &self.cloud_cover),
         ]
         .into_iter()
         .filter_map(|(property, threshold)| threshold.as_ref().map(|t| (property, t)))
@@ -513,6 +552,10 @@ pub struct ThresholdConfig {
 
 fn default_ecowitt_poll_interval() -> u64 {
     30
+}
+
+fn default_alpaca_port() -> u16 {
+    11111
 }
 
 fn default_auto_connect() -> bool {
