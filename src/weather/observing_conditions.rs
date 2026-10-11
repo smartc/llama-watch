@@ -29,7 +29,6 @@ impl WeatherDeviceKind {
 
 /// ASCOM ObservingConditions device
 pub struct ObservingConditionsDevice {
-    pub device_number: u32,
     pub kind: WeatherDeviceKind,
     pub connected: SyncRwLock<bool>,
     pub server_transaction_id: AtomicU32,
@@ -42,7 +41,6 @@ pub struct ObservingConditionsDevice {
 impl ObservingConditionsDevice {
     pub fn new(kind: WeatherDeviceKind, name: String, description: String, connected: bool) -> Self {
         Self {
-            device_number: kind.device_number(),
             kind,
             connected: SyncRwLock::new(connected),
             server_transaction_id: AtomicU32::new(0),

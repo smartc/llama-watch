@@ -155,7 +155,6 @@ async fn main() -> Result<()> {
     // Create management state for management API endpoints
     let management_state = Arc::new(ManagementState {
         safety_monitor: safety_monitor.clone(),
-        monitor_state: shared_monitor_state.clone(),
         oc_devices: oc_devices_shared.clone(),
         switch_device: switch_device.clone(),
     });
@@ -207,10 +206,7 @@ async fn main() -> Result<()> {
     let app = app.merge(web::create_router(web_state));
 
     // Start ASCOM Alpaca discovery service
-    let discovery = Arc::new(DiscoveryService::new(
-        server_port,
-        safety_monitor.device_name.clone(),
-    ));
+    let discovery = Arc::new(DiscoveryService::new(server_port));
     discovery.start();
     info!("🔍 ASCOM Alpaca discovery service started on UDP port 32227");
 

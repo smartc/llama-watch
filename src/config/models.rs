@@ -638,14 +638,6 @@ impl GroupLogic {
         }
     }
 
-    /// Get a human-readable description of the logic
-    pub fn description(&self) -> String {
-        match self {
-            GroupLogic::Any => "unsafe if ANY member is unsafe".to_string(),
-            GroupLogic::All => "unsafe only if ALL members are unsafe".to_string(),
-            GroupLogic::MinOf { count } => format!("unsafe if at least {} members are unsafe", count),
-        }
-    }
 }
 
 /// Configuration for a monitor group that aggregates multiple monitors with custom logic

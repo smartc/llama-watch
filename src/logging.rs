@@ -537,4 +537,3 @@ pub struct LogFileInfo {
     pub modified: Option<DateTime<Utc>>,
 }
 
-pub type SharedDebugLogger = Arc<DebugLogger>;

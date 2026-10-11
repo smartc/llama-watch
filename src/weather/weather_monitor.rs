@@ -11,27 +11,21 @@ use super::observing_conditions::{WeatherDataAccessor, WeatherDeviceKind};
 
 #[derive(Debug, Clone)]
 pub struct WeatherMonitorStatus {
-    pub device_number: u32,
-    pub name: String,
     pub is_safe: bool,
     pub last_update: Option<DateTime<Utc>>,
     pub error: Option<String>,
     pub enabled: bool,
     pub measurements: HashMap<String, MeasurementStatus>,
     // Hold time management
-    pub hold_time_seconds: u64,
     pub pending_is_safe: Option<bool>,
     pub pending_since: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct MeasurementStatus {
-    pub name: String,
-    pub value: f64,
     pub threshold: f64,
     pub is_safe: bool,
     pub timeout_seconds: Option<i64>,
-    pub last_update: Option<DateTime<Utc>>,
 }
 
 /// Result of checking readings against safety thresholds
@@ -82,12 +76,9 @@ pub fn evaluate(thresholds: &WeatherSafetyThresholds, readings: &Readings, now: 
         let is_safe = !timed_out && check_threshold(reading.value, threshold);
         all_safe = all_safe && is_safe;
         measurements.insert(property.label().to_string(), MeasurementStatus {
-            name: property.label().to_string(),
-            value: reading.value,
             threshold: threshold.threshold,
             is_safe,
             timeout_seconds: threshold.timeout_seconds,
-            last_update: Some(reading.timestamp),
         });
     }
 
@@ -117,14 +108,11 @@ impl WeatherMonitor {
         initial_is_safe: bool,
     ) -> Self {
         let status = WeatherMonitorStatus {
-            device_number: kind.device_number(),
-            name: name.clone(),
             is_safe: initial_is_safe,
             last_update: None,
             error: None,
             enabled: true,
             measurements: HashMap::new(),
-            hold_time_seconds: thresholds.hold_time_seconds,
             pending_is_safe: None,
             pending_since: None,
         };
