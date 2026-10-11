@@ -4,7 +4,10 @@ let currentWeatherDevice = null;
 let weatherDevices = [];
 let weatherAggregate = null;
 let weatherFormMode = 'source'; // 'source' or 'aggregate'
-let weatherAggregateOrder = []; // [{device_number, included}] while editing the aggregate
+// Source order rows while editing the aggregate: 'default' plus any measurement whose
+// order differs from the default. Each row is [{device_number, included}].
+let sourceRows = {};
+let weatherSourceValues = {}; // device_number -> measurement key -> current value text
 let alpacaProperties = []; // [{property, label, value, description, checked}] while editing an Alpaca source
 
 const WEATHER_THRESHOLDS = ['temperature', 'humidity', 'wind_speed', 'wind_gust', 'rain_rate', 'sky_brightness',
@@ -201,15 +204,9 @@ async function editWeatherAggregate() {
         document.getElementById('weather-device-auto-connect').checked = agg.auto_connect;
         document.getElementById('weather-aggregate-stale-after').value = agg.stale_after_seconds;
 
-        // Listed sources first in priority order, then the rest (excluded unless the list is empty = all)
-        const listed = agg.source_priority.filter(n => weatherDevices.some(d => d.device_number === n));
-        const unlisted = weatherDevices.map(d => d.device_number).filter(n => !listed.includes(n));
-        weatherAggregateOrder = [
-            ...listed.map(n => ({ device_number: n, included: true })),
-            ...unlisted.map(n => ({ device_number: n, included: listed.length === 0 }))
-        ];
-        renderWeatherAggregateOrder();
-        renderWeatherAggregateProperties(agg.property_sources);
+        await loadWeatherSourceValues();
+        loadSourceRows(agg);
+        renderSourceRows();
 
         populateSafetyThresholds(agg.safety_thresholds);
         showWeatherForm('Edit Aggregate Weather Device');
@@ -219,79 +216,151 @@ async function editWeatherAggregate() {
     }
 }
 
-function renderWeatherAggregateOrder() {
-    const container = document.getElementById('weather-aggregate-order');
-    if (weatherAggregateOrder.length === 0) {
-        container.innerHTML = '<p class="no-data">No weather sources configured.</p>';
+async function loadWeatherSourceValues() {
+    weatherSourceValues = {};
+    try {
+        const response = await fetch('/api/weather/status');
+        if (!response.ok) return;
+        for (const status of await response.json()) {
+            if (status.kind !== 'source') continue;
+            const values = {};
+            WEATHER_PROPERTIES.forEach(([key, label]) => {
+                const m = status.measurements[label];
+                if (!m) return;
+                const unit = (m.name.match(/\(([^)]*)\)\s*$/) || [])[1] || '';
+                values[key] = m.value.toFixed(1) + (unit ? ' ' + unit : '');
+            });
+            weatherSourceValues[status.device_number] = values;
+        }
+    } catch (error) {
+        console.warn('Could not load current weather values:', error);
+    }
+}
+
+// Sources that provide a measurement ('default' = all sources), by device number
+function sourcesProviding(key) {
+    return weatherDevices
+        .filter(d => key === 'default' || (d.properties || []).includes(key))
+        .map(d => d.device_number);
+}
+
+function loadSourceRows(agg) {
+    sourceRows = {};
+    // Default: listed sources in priority order, then the rest (excluded unless the list is empty = all)
+    const all = sourcesProviding('default');
+    const listed = agg.source_priority.filter(n => all.includes(n));
+    sourceRows.default = [
+        ...listed.map(n => ({ device_number: n, included: true })),
+        ...all.filter(n => !listed.includes(n)).map(n => ({ device_number: n, included: listed.length === 0 }))
+    ];
+    for (const [key, list] of Object.entries(agg.property_sources || {})) {
+        const providers = sourcesProviding(key);
+        const listedHere = list.filter(n => providers.includes(n));
+        if (listedHere.length === 0) continue;
+        sourceRows[key] = [
+            ...listedHere.map(n => ({ device_number: n, included: true })),
+            ...providers.filter(n => !listedHere.includes(n)).map(n => ({ device_number: n, included: false }))
+        ];
+    }
+}
+
+// A measurement's row: its own order if changed, otherwise the default order
+// restricted to the sources that provide it
+function effectiveSourceRow(key) {
+    if (sourceRows[key]) return sourceRows[key];
+    const providers = sourcesProviding(key);
+    return sourceRows.default.filter(e => providers.includes(e.device_number)).map(e => ({ ...e }));
+}
+
+function sourceRowAction(key, index, action) {
+    const row = effectiveSourceRow(key).map(e => ({ ...e }));
+    if (action === 'toggle') {
+        if (row[index].included && row.filter(e => e.included).length === 1) {
+            showNotification('At least one source must be used', 'error');
+            return;
+        }
+        row[index].included = !row[index].included;
+    } else {
+        const target = index + action;
+        if (target < 0 || target >= row.length) return;
+        [row[index], row[target]] = [row[target], row[index]];
+    }
+    sourceRows[key] = row;
+    renderSourceRows();
+}
+
+function resetSourceRow(key) {
+    delete sourceRows[key];
+    renderSourceRows();
+}
+
+function sourceRowHtml(key, label) {
+    const row = effectiveSourceRow(key);
+    if (row.length === 0) return '';
+    const inherited = key !== 'default' && !sourceRows[key];
+    let rank = 0;
+    const chips = row.map((entry, i) => {
+        const device = weatherDevices.find(d => d.device_number === entry.device_number);
+        const name = device ? device.name : `#${entry.device_number}`;
+        const value = key === 'default' ? '' : ((weatherSourceValues[entry.device_number] || {})[key] || '');
+        const disabled = device && !device.enabled;
+        if (entry.included) rank++;
+        return `<span class="source-chip${entry.included ? '' : ' excluded'}${disabled ? ' disabled' : ''}">` +
+            `<button type="button" class="chip-move" onclick="sourceRowAction('${key}', ${i}, -1)" ${i === 0 ? 'disabled' : ''} title="Move earlier">‹</button>` +
+            `<button type="button" class="chip-toggle" onclick="sourceRowAction('${key}', ${i}, 'toggle')" title="${entry.included ? 'Click to stop using this source' : 'Click to use this source'}">` +
+                `<span class="chip-rank">${entry.included ? rank : '–'}</span>${escapeHtml(name)}` +
+                (value ? ` <small>${escapeHtml(value)}</small>` : '') +
+                (disabled ? ' <small>(disabled)</small>' : '') +
+            `</button>` +
+            `<button type="button" class="chip-move" onclick="sourceRowAction('${key}', ${i}, 1)" ${i === row.length - 1 ? 'disabled' : ''} title="Move later">›</button>` +
+            `</span>`;
+    }).join('');
+    let status = '';
+    if (inherited) {
+        status = '<span class="source-row-note">default order</span>';
+    } else if (key !== 'default') {
+        status = `<button type="button" class="btn btn-sm btn-secondary" onclick="resetSourceRow('${key}')">Reset</button>`;
+    }
+    return `<div class="source-row${inherited ? ' inherited' : ''}">` +
+        `<div class="source-row-label">${label}</div>` +
+        `<div class="source-row-chips">${chips}</div>` +
+        `<div class="source-row-status">${status}</div>` +
+        `</div>`;
+}
+
+function renderSourceRows() {
+    const defaultContainer = document.getElementById('weather-aggregate-order');
+    if (sourceRows.default.length === 0) {
+        defaultContainer.innerHTML = '<p class="no-data">No weather sources configured.</p>';
+        document.getElementById('weather-aggregate-properties').innerHTML = '';
         return;
     }
-    container.innerHTML = weatherAggregateOrder.map((entry, i) => `
-        <div class="priority-row">
-            <label class="checkbox-group">
-                <input type="checkbox" ${entry.included ? 'checked' : ''} onchange="weatherAggregateOrder[${i}].included = this.checked">
-                <span>${i + 1}. ${escapeHtml(weatherSourceName(entry.device_number))}</span>
-            </label>
-            <button type="button" class="btn btn-sm btn-secondary" onclick="moveWeatherAggregateSource(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button>
-            <button type="button" class="btn btn-sm btn-secondary" onclick="moveWeatherAggregateSource(${i}, 1)" ${i === weatherAggregateOrder.length - 1 ? 'disabled' : ''}>↓</button>
-        </div>
-    `).join('');
-}
-
-function moveWeatherAggregateSource(index, delta) {
-    const target = index + delta;
-    if (target < 0 || target >= weatherAggregateOrder.length) return;
-    [weatherAggregateOrder[index], weatherAggregateOrder[target]] = [weatherAggregateOrder[target], weatherAggregateOrder[index]];
-    renderWeatherAggregateOrder();
-}
-
-function renderWeatherAggregateProperties(propertySources) {
-    const container = document.getElementById('weather-aggregate-properties');
-    const sourceOptions = weatherDevices.map(d => `
-        <option value="prefer:${d.device_number}">Prefer ${escapeHtml(weatherSourceName(d.device_number))}</option>
-        <option value="only:${d.device_number}">Only ${escapeHtml(weatherSourceName(d.device_number))}</option>
-    `).join('');
-
-    container.innerHTML = WEATHER_PROPERTIES.map(([key, label]) => `
-        <div class="priority-row">
-            <div>${label}</div>
-            <select id="weather-aggregate-property-${key}">
-                <option value="default">Default priority</option>
-                ${sourceOptions}
-            </select>
-        </div>
-    `).join('');
-
-    WEATHER_PROPERTIES.forEach(([key]) => {
-        const sources = propertySources[key];
-        if (!sources || sources.length === 0) return;
-        const value = sources.length === 1 ? `only:${sources[0]}` : `prefer:${sources[0]}`;
-        const select = document.getElementById(`weather-aggregate-property-${key}`);
-        if ([...select.options].some(o => o.value === value)) select.value = value;
-    });
+    defaultContainer.innerHTML = sourceRowHtml('default', 'All measurements');
+    document.getElementById('weather-aggregate-properties').innerHTML =
+        WEATHER_PROPERTIES.map(([key, label]) => sourceRowHtml(key, label)).join('');
 }
 
 // Default priority as saved: empty means "all sources by device number", which
 // also picks up sources added later
 function collectAggregateSourcePriority() {
-    const included = weatherAggregateOrder.filter(e => e.included).map(e => e.device_number);
+    const included = sourceRows.default.filter(e => e.included).map(e => e.device_number);
     const allByNumber = weatherDevices.map(d => d.device_number).sort((a, b) => a - b);
     const isDefault = included.length === allByNumber.length && included.every((n, i) => n === allByNumber[i]);
     return isDefault ? [] : included;
 }
 
-function collectAggregatePropertySources(sourcePriority) {
-    const effectiveDefault = sourcePriority.length
-        ? sourcePriority
-        : weatherDevices.map(d => d.device_number).sort((a, b) => a - b);
+// Only measurements whose order differs from the default are saved
+function collectAggregatePropertySources() {
     const propertySources = {};
     WEATHER_PROPERTIES.forEach(([key]) => {
-        const value = document.getElementById(`weather-aggregate-property-${key}`).value;
-        if (value === 'default') return;
-        const [mode, n] = value.split(':');
-        const preferred = parseInt(n);
-        propertySources[key] = mode === 'only'
-            ? [preferred]
-            : [preferred, ...effectiveDefault.filter(d => d !== preferred)];
+        if (!sourceRows[key]) return;
+        const providers = sourcesProviding(key);
+        const own = sourceRows[key].filter(e => e.included).map(e => e.device_number);
+        const inherited = sourceRows.default
+            .filter(e => e.included && providers.includes(e.device_number))
+            .map(e => e.device_number);
+        const same = own.length === inherited.length && own.every((n, i) => n === inherited[i]);
+        if (!same) propertySources[key] = own;
     });
     return propertySources;
 }
@@ -508,7 +577,7 @@ async function saveWeatherDevice() {
             auto_connect: document.getElementById('weather-device-auto-connect').checked,
             stale_after_seconds: parseInt(document.getElementById('weather-aggregate-stale-after').value) || 120,
             source_priority,
-            property_sources: collectAggregatePropertySources(source_priority),
+            property_sources: collectAggregatePropertySources(),
             safety_thresholds: collectSafetyThresholds()
         };
     } else {

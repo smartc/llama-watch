@@ -475,6 +475,7 @@ pub struct WeatherDeviceResponse {
     pub safety_enabled: bool,
     pub expose_device: bool,
     pub exposed: bool, // Currently served as its own ObservingConditions device
+    pub properties: Vec<crate::weather::observation::WeatherProperty>, // Measurements this source provides
 }
 
 #[derive(Serialize)]
@@ -567,6 +568,7 @@ pub async fn get_weather_devices(
                 .unwrap_or(false),
             expose_device: device_config.expose_device,
             exposed: exposed.contains(device_number),
+            properties: crate::weather::observation::supported_properties(&device_config.source),
         });
     }
 

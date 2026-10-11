@@ -503,12 +503,13 @@
                             <div class="info-text">Data older than this is skipped in favour of the next source. If every source is stale, the newest data is still served and safety timeouts apply.</div>
                         </div>
                         <div class="form-group">
-                            <label>Default Source Priority</label>
+                            <label>Default Source Order</label>
+                            <div class="info-text" style="margin-bottom: 6px;">Sources are used in the numbered order; the first one with fresh data wins. Click a source to stop or start using it, and use ‹ › to move it. With every source used in device-number order, new sources are included automatically.</div>
                             <div id="weather-aggregate-order"></div>
-                            <div class="info-text">Unchecked sources are not used by the aggregate. With every source checked in device-number order, new sources are included automatically.</div>
                         </div>
                         <div class="form-group">
-                            <label>Per-Measurement Source</label>
+                            <label>Per-Measurement Source Order</label>
+                            <div class="info-text" style="margin-bottom: 6px;">Each measurement lists only the sources that provide it, with their current values. Rows follow the default order until you change them; Reset returns a row to the default.</div>
                             <div id="weather-aggregate-properties"></div>
                         </div>
                     </div>

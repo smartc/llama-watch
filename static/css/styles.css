@@ -532,6 +532,103 @@ body {
 .badge-info { background: #667eea; }
 .badge-secondary { background: #9e9e9e; }
 
+/* Aggregate weather device source order */
+.source-row {
+    display: grid;
+    grid-template-columns: 150px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #eee;
+}
+
+.source-row:nth-child(even) {
+    background: #f7f7fb;
+}
+
+.source-row-label {
+    font-weight: 600;
+}
+
+.source-row-status .btn {
+    padding: 3px 12px;
+    font-size: 0.8em;
+}
+
+.source-row-note {
+    font-size: 0.8em;
+    color: #999;
+    font-style: italic;
+}
+
+.source-chip {
+    display: inline-flex;
+    align-items: center;
+    margin: 2px 6px 2px 0;
+    border: 1px solid #667eea;
+    border-radius: 16px;
+    background: white;
+    overflow: hidden;
+}
+
+.source-row.inherited .source-chip {
+    border-color: #b8c1f3;
+}
+
+.source-chip.excluded {
+    border-style: dashed;
+    opacity: 0.55;
+}
+
+.source-chip.excluded .chip-toggle {
+    text-decoration: line-through;
+}
+
+.source-chip button {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    color: #333;
+}
+
+.source-chip button:disabled {
+    color: #ccc;
+    cursor: default;
+}
+
+.source-chip .chip-move:hover:not(:disabled) {
+    background: #eef0fd;
+}
+
+.source-chip .chip-toggle small {
+    color: #777;
+}
+
+.chip-rank {
+    display: inline-block;
+    min-width: 18px;
+    height: 18px;
+    line-height: 18px;
+    margin-right: 5px;
+    border-radius: 9px;
+    background: #667eea;
+    color: white;
+    font-size: 0.8em;
+    text-align: center;
+}
+
+.source-chip.excluded .chip-rank {
+    background: #bbb;
+}
+
+@media (max-width: 600px) {
+    .source-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Aggregate weather device editor rows */
 .priority-row {
     display: flex;
