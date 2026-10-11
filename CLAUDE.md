@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **LLAMA Safety Monitor** (Lightweight Logical ASCOM MQTT Alpaca Safety Monitor) is a Rust-based ASCOM Alpaca server that implements two device types:
 
 1. **SafetyMonitor** - Aggregates multiple data sources to determine observatory safety
-2. **ObservingConditions** - Provides weather data from Tempest stations, Ecowitt gateways and other Alpaca ObservingConditions devices, with an aggregate device (0) that combines them
+2. **ObservingConditions** - Provides weather data from Tempest stations, Ecowitt gateways, Weather Underground stations and other Alpaca ObservingConditions devices, with an aggregate device (0) that combines them
 
 The system monitors MQTT feeds, ASCOM Alpaca endpoints, UDP weather broadcasts and polled weather gateways to provide real-time safety status for astronomical observatory operations.
 
@@ -82,7 +82,8 @@ The application is organized into distinct modules with clear separation of conc
 - `tempest.rs` - `TempestListener` receives UDP broadcasts from Tempest weather stations
 - `ecowitt.rs` - polls Ecowitt gateways' local `/get_livedata_info` API and converts units to metric
 - `alpaca.rs` - polls remote Alpaca ObservingConditions devices (value + per-property `timesincelastupdate`); `detect()` lists implemented properties
-- `pollers.rs` - `SourcePollers` runs one polling task per enabled Ecowitt/Alpaca source
+- `weather_underground.rs` - polls the Weather Underground PWS current observations API
+- `pollers.rs` - `SourcePollers` runs one polling task per enabled Ecowitt/Alpaca/Weather Underground source
 - `observing_conditions.rs` - `ObservingConditionsDevice`, `WeatherDataAccessor`, and aggregate resolution (`resolve_readings`)
 - `weather_monitor.rs` - `WeatherMonitorManager` evaluates weather safety thresholds
 - `service.rs` - `WeatherService` rebuilds devices, monitors and pollers from config (`apply_config`)
@@ -122,7 +123,7 @@ SourcePollers (HTTP) ──┴─> Arc<RwLock<WeatherStore>>  // latest WeatherO
 WeatherService
   ├─ devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>
   ├─ monitors: Arc<RwLock<WeatherMonitorManager>>
-  └─ SourcePollers (Ecowitt, Alpaca)
+  └─ SourcePollers (Ecowitt, Alpaca, Weather Underground)
 ```
 
 **State is shared across:**
@@ -216,7 +217,11 @@ This prevents brief UNSAFE blips when adding/removing monitors.
 - Alpaca: any ASCOM ObservingConditions device, polled with GET only (Connected is never changed). The source config
   lists the `properties` to take, chosen with the UI's Detect button (`POST /api/weather/alpaca/detect`). Each value is
   timestamped from the device's `timesincelastupdate`, so a stuck sensor goes stale even while polls succeed
-- Future: Weather Underground API (structure exists, not implemented)
+- Weather Underground: `GET https://api.weather.com/v2/pws/observations/current` (units=m) every
+  `poll_interval_seconds` (default 120, minimum 60: PWS keys allow 1500 calls/day). Values are timestamped from
+  `obsTimeUtc`; wind is converted from km/h. No Pressure (WU reports it reduced to sea level). The API key is in
+  the request URL, so request errors are logged with `reqwest::Error::without_url()`; never log the URL or source config.
+  Test fixture (redacted): `src/weather/testdata/wu_pws_current.json`
 
 **Property mapping:**
 - Tempest `illuminance` (lux) → `SkyBrightness` (ASCOM defines SkyBrightness in lux; SkyQuality is mag/arcsec² and comes only from sources that measure it)
@@ -347,7 +352,7 @@ Static files in `static/`:
 - Tempest broadcasts are received asynchronously via UDP and stamped with the observation time
 - Ecowitt observations are stamped with the time of the successful poll (the payload has no timestamp)
 - Alpaca observations carry per-property measurement times (`WeatherObservation::measured_at`)
-- `WeatherStore` keys observations as `tempest:<serial>` / `ecowitt:<host>` / `alpaca:<host>:<port>:<device>`; a Tempest source without a serial uses the most recently heard Tempest
+- `WeatherStore` keys observations as `tempest:<serial>` / `ecowitt:<host>` / `alpaca:<host>:<port>:<device>` / `wu:<station>`; a Tempest source without a serial uses the most recently heard Tempest
 - `timeSinceLastUpdate` is per property, from the reading actually served (for device 0, the chosen source)
 - Never hold the config `RwLock` while calling `WeatherDataAccessor::readings()` (it locks config itself);
   use `readings_with(&config, ...)` instead, since tokio's RwLock is write-preferring and nested reads can deadlock

@@ -3,9 +3,9 @@ use tokio::task::JoinHandle;
 
 use crate::config::models::{WeatherDataSource, WeatherDeviceConfig};
 use super::observation::SharedWeatherStore;
-use super::{alpaca, ecowitt};
+use super::{alpaca, ecowitt, weather_underground};
 
-/// Runs one polling task per enabled polled weather source (Ecowitt, Alpaca)
+/// Runs one polling task per enabled polled weather source (Ecowitt, Alpaca, Weather Underground)
 #[derive(Default)]
 pub struct SourcePollers {
     tasks: HashMap<u32, (WeatherDataSource, JoinHandle<()>)>,
@@ -38,6 +38,9 @@ impl SourcePollers {
                 WeatherDataSource::Alpaca { host, port, device_number, poll_interval_seconds, properties } => tokio::spawn(
                     alpaca::poll_device(host.clone(), *port, *device_number, properties.clone(), *poll_interval_seconds, store.clone()),
                 ),
+                WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds } => tokio::spawn(
+                    weather_underground::poll_station(station_id.clone(), api_key.clone(), *poll_interval_seconds, store.clone()),
+                ),
                 _ => continue,
             };
             self.tasks.insert(number, (source.clone(), task));
@@ -46,5 +49,8 @@ impl SourcePollers {
 }
 
 fn is_polled(source: &WeatherDataSource) -> bool {
-    matches!(source, WeatherDataSource::Ecowitt { .. } | WeatherDataSource::Alpaca { .. })
+    matches!(
+        source,
+        WeatherDataSource::Ecowitt { .. } | WeatherDataSource::Alpaca { .. } | WeatherDataSource::WeatherUnderground { .. }
+    )
 }

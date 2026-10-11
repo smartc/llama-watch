@@ -382,6 +382,7 @@ function resetWeatherDeviceForm() {
     renderAlpacaProperties();
     document.getElementById('weather-device-wu-station').value = '';
     document.getElementById('weather-device-wu-apikey').value = '';
+    document.getElementById('weather-device-wu-interval').value = 120;
     document.getElementById('weather-device-enabled').checked = true;
     document.getElementById('weather-device-expose').checked = true;
     document.getElementById('weather-device-auto-connect').checked = true;
@@ -421,6 +422,7 @@ function populateWeatherDeviceForm(device) {
         document.getElementById('weather-device-source-type').value = 'weatherunderground';
         document.getElementById('weather-device-wu-station').value = device.source.station_id || '';
         document.getElementById('weather-device-wu-apikey').value = device.source.api_key || '';
+        document.getElementById('weather-device-wu-interval').value = device.source.poll_interval_seconds || 120;
     }
     updateWeatherSourceFields();
 
@@ -628,11 +630,18 @@ async function saveWeatherDevice() {
                 properties
             };
         } else {
-            source = {
-                type: 'weatherunderground',
-                station_id: document.getElementById('weather-device-wu-station').value.trim(),
-                api_key: document.getElementById('weather-device-wu-apikey').value.trim()
-            };
+            const station_id = document.getElementById('weather-device-wu-station').value.trim();
+            const api_key = document.getElementById('weather-device-wu-apikey').value.trim();
+            const poll_interval_seconds = parseInt(document.getElementById('weather-device-wu-interval').value) || 120;
+            if (!station_id || !api_key) {
+                showNotification('Weather Underground station ID and API key are required', 'error');
+                return;
+            }
+            if (poll_interval_seconds < 60) {
+                showNotification('Weather Underground poll interval must be at least 60 seconds', 'error');
+                return;
+            }
+            source = { type: 'weatherunderground', station_id, api_key, poll_interval_seconds };
         }
 
         url = currentWeatherDevice ? `/api/weather/devices/${deviceNumber}` : '/api/weather/devices';

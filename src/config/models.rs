@@ -246,6 +246,19 @@ impl AppConfig {
                     ));
                 }
             }
+            if let WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds } = &device.source {
+                if station_id.trim().is_empty() || api_key.trim().is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' needs a Weather Underground station ID and API key", device.name
+                    ));
+                }
+                if *poll_interval_seconds < 60 {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' poll interval must be at least 60 seconds (Weather Underground allows 1500 calls/day)",
+                        device.name
+                    ));
+                }
+            }
             if let WeatherDataSource::Alpaca { properties, .. } = &device.source {
                 if properties.is_empty() {
                     return Err(anyhow::anyhow!(
@@ -499,9 +512,12 @@ pub enum WeatherDataSource {
         #[serde(default)]
         properties: Vec<WeatherProperty>, // Properties to take from this device
     },
+    /// Weather Underground personal weather station (PWS API)
     WeatherUnderground {
         station_id: String,
         api_key: String,
+        #[serde(default = "default_wu_poll_interval")]
+        poll_interval_seconds: u64, // PWS keys allow 1500 calls/day, so at least 60
     },
 }
 
@@ -564,6 +580,10 @@ pub struct ThresholdConfig {
 
 fn default_ecowitt_poll_interval() -> u64 {
     30
+}
+
+fn default_wu_poll_interval() -> u64 {
+    120
 }
 
 fn default_alpaca_port() -> u16 {

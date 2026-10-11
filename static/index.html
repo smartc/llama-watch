@@ -413,7 +413,7 @@
                             <option value="tempest">Tempest Weather Station (UDP)</option>
                             <option value="ecowitt">Ecowitt Gateway (HTTP polling)</option>
                             <option value="alpaca">ASCOM Alpaca ObservingConditions (HTTP polling)</option>
-                            <option value="weatherunderground" disabled>Weather Underground (Future)</option>
+                            <option value="weatherunderground">Weather Underground PWS (cloud API)</option>
                         </select>
                     </div>
                     <div id="tempest-fields">
@@ -464,14 +464,19 @@
                     <div id="wu-fields" style="display: none;">
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Station ID</label>
+                                <label>Station ID *</label>
                                 <input type="text" id="weather-device-wu-station" placeholder="e.g., KMABOSTON123">
                             </div>
                             <div class="form-group">
-                                <label>API Key</label>
-                                <input type="text" id="weather-device-wu-apikey" placeholder="Your WU API key">
+                                <label>API Key *</label>
+                                <input type="password" id="weather-device-wu-apikey" placeholder="Your WU API key" autocomplete="off">
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-wu-interval" value="120" min="60">
                             </div>
                         </div>
+                        <div class="info-text">Personal weather station API keys are issued to station owners (wunderground.com → My Profile → API Keys) and allow 1500 calls/day, so the interval must be at least 60s. Pressure isn't used from this source because Weather Underground reports it reduced to sea level.</div>
                     </div>
                     <div class="form-group">
                         <label class="checkbox-group">

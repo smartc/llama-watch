@@ -235,6 +235,10 @@ impl WeatherStore {
         format!("ecowitt:{}", host.trim().to_ascii_lowercase())
     }
 
+    pub fn weather_underground_key(station_id: &str) -> String {
+        format!("wu:{}", station_id.trim().to_ascii_uppercase())
+    }
+
     pub fn alpaca_key(host: &str, port: u16, device_number: u32) -> String {
         format!("alpaca:{}:{}:{}", host.trim().to_ascii_lowercase(), port, device_number)
     }
@@ -294,7 +298,9 @@ impl WeatherStore {
             WeatherDataSource::Alpaca { host, port, device_number, .. } => {
                 Some(Self::alpaca_key(host, *port, *device_number))
             }
-            WeatherDataSource::WeatherUnderground { .. } => None,
+            WeatherDataSource::WeatherUnderground { station_id, .. } => {
+                Some(Self::weather_underground_key(station_id))
+            }
         }
     }
 
@@ -339,7 +345,18 @@ pub fn supported_properties(source: &WeatherDataSource) -> Vec<WeatherProperty> 
         ],
         // Whatever was selected when the source was configured
         WeatherDataSource::Alpaca { properties, .. } => properties.clone(),
-        WeatherDataSource::WeatherUnderground { .. } => Vec::new(),
+        // No Pressure: WU reports it reduced to sea level, not at the station
+        WeatherDataSource::WeatherUnderground { .. } => vec![
+            WeatherProperty::Temperature,
+            WeatherProperty::Humidity,
+            WeatherProperty::DewPoint,
+            WeatherProperty::WindSpeed,
+            WeatherProperty::WindGust,
+            WeatherProperty::WindDirection,
+            WeatherProperty::RainRate,
+            WeatherProperty::SolarRadiation,
+            WeatherProperty::UvIndex,
+        ],
     }
 }
 

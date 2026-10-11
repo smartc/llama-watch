@@ -142,6 +142,20 @@
       "enabled": true,
       "auto_connect": true,
       "expose_device": true
+    },
+    "4": {
+      "device_number": 4,
+      "name": "Weather Underground",
+      "description": "Personal weather station via the Weather Underground PWS API",
+      "source": {
+        "type": "weatherunderground",
+        "station_id": "YOUR_STATION_ID",
+        "api_key": "YOUR_PWS_API_KEY",
+        "poll_interval_seconds": 120
+      },
+      "enabled": false,
+      "auto_connect": true,
+      "expose_device": true
     }
   },
   "weather_aggregate": {

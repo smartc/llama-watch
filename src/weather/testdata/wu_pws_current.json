@@ -1,0 +1,33 @@
+{
+  "observations": [
+    {
+      "stationID": "ISTATION1",
+      "obsTimeUtc": "2026-10-11T15:57:39Z",
+      "obsTimeLocal": "2026-10-11 09:57:39",
+      "neighborhood": "Example",
+      "softwareType": "GW3000B_V1.2.4",
+      "country": "CA",
+      "solarRadiation": 85.6,
+      "lon": 0.0,
+      "realtimeFrequency": null,
+      "epoch": 1791734259,
+      "lat": 0.0,
+      "uv": 0.0,
+      "winddir": 342,
+      "humidity": 96.0,
+      "qcStatus": 1,
+      "metric": {
+        "temp": -1.4,
+        "heatIndex": -1.4,
+        "dewpt": -2.0,
+        "windChill": -1.4,
+        "windSpeed": 3.2,
+        "windGust": 5.4,
+        "pressure": 1023.1,
+        "precipRate": 0.0,
+        "precipTotal": 0.0,
+        "elev": 342.9
+      }
+    }
+  ]
+}
