@@ -9,6 +9,7 @@ A Rust-based ASCOM Alpaca Safety Monitor that monitors multiple MQTT feeds and A
 - **ASCOM Alpaca Safety Monitor Interface**: Full implementation of the ASCOM Alpaca SafetyMonitor device specification
 - **MQTT Monitoring**: Monitor any number of MQTT topics with JSON path extraction
 - **ASCOM Alpaca Endpoint Monitoring**: Monitor other ASCOM Alpaca devices and properties
+- **ASCOM Alpaca ObservingConditions**: Combine weather data from Tempest, Ecowitt, other Alpaca ObservingConditions devices and Weather Underground into one aggregate device, with automatic fallback between sources and weather safety thresholds. See [WEATHER.md](WEATHER.md)
 - **Flexible Threshold Comparisons**: Support for `>`, `<`, and `==` operators
 - **JSON Path Extraction**: Extract specific values from nested JSON objects in MQTT messages
 - **Web-based Configuration**: Easy-to-use web interface for managing monitors
