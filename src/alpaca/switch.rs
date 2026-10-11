@@ -10,7 +10,7 @@ use std::sync::{
     Arc,
 };
 
-use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, SwitchQueryParams, ActionRequest, CommandRequest};
+use super::models::{AlpacaForm, AlpacaResponse, ConnectedRequest, QueryParams, SwitchQueryParams, ActionRequest, CommandRequest, deserialize_alpaca_bool};
 use crate::config::models::SwitchDeviceConfig;
 use crate::switches::SharedSwitchManager;
 
@@ -577,39 +577,34 @@ pub async fn get_switchstep(
 }
 
 // ============================================================================
-// Write operations (all return errors since we're read-only)
+// Write operations (all return NotImplemented since every switch is read-only)
 // ============================================================================
+
+// PUT parameter names are case-sensitive per the Alpaca spec, so a missing or
+// wrongly cased Id/State/Value/Name fails form parsing and returns HTTP 400.
 
 /// PUT request for SetSwitch
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
-    #[serde(rename = "ClientID")]
+    #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
-    #[serde(rename = "ClientTransactionID")]
+    #[serde(default, rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "State", alias = "state", alias = "STATE")]
-    #[serde(rename = "State")]
-    pub state: String,
+    #[serde(rename = "State", deserialize_with = "deserialize_alpaca_bool")]
+    pub state: bool,
 }
 
 /// PUT request for SetSwitchValue
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchValueRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
-    #[serde(rename = "ClientID")]
+    #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
-    #[serde(rename = "ClientTransactionID")]
+    #[serde(default, rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "Value", alias = "value", alias = "VALUE")]
     #[serde(rename = "Value")]
     pub value: f64,
 }
@@ -617,16 +612,12 @@ pub struct SetSwitchValueRequest {
 /// PUT request for SetSwitchName
 #[derive(Debug, serde::Deserialize)]
 pub struct SetSwitchNameRequest {
-    #[serde(default, alias = "ClientID", alias = "clientid", alias = "CLIENTID", alias = "clientId")]
-    #[serde(rename = "ClientID")]
+    #[serde(default, rename = "ClientID")]
     pub client_i_d: u32,
-    #[serde(default, alias = "ClientTransactionID", alias = "clienttransactionid", alias = "CLIENTTRANSACTIONID", alias = "clientTransactionId")]
-    #[serde(rename = "ClientTransactionID")]
+    #[serde(default, rename = "ClientTransactionID")]
     pub client_transaction_i_d: u32,
-    #[serde(alias = "ID", alias = "id", alias = "Id", alias = "iD")]
     #[serde(rename = "Id")]
     pub id: i16,
-    #[serde(alias = "Name", alias = "name", alias = "NAME")]
     #[serde(rename = "Name")]
     pub name: String,
 }
@@ -676,11 +667,11 @@ pub async fn put_setswitch(
         .into_response();
     }
 
-    // All switches are read-only
+    // All switches are read-only (CanWrite is false): ASCOM requires MethodNotImplementedException
     Json(AlpacaResponse::<()>::error(
         request.client_transaction_i_d,
         server_id,
-        0x40B, // PropertyNotImplementedException
+        0x400, // NotImplementedException
         "This switch is read-only and cannot be set".to_string(),
     ))
     .into_response()
@@ -731,11 +722,11 @@ pub async fn put_setswitchvalue(
         .into_response();
     }
 
-    // All switches are read-only
+    // All switches are read-only (CanWrite is false): ASCOM requires MethodNotImplementedException
     Json(AlpacaResponse::<()>::error(
         request.client_transaction_i_d,
         server_id,
-        0x40B, // PropertyNotImplementedException
+        0x400, // NotImplementedException
         "This switch is read-only and cannot be set".to_string(),
     ))
     .into_response()
@@ -786,11 +777,11 @@ pub async fn put_setswitchname(
         .into_response();
     }
 
-    // All switches are read-only
+    // Renaming switches is not supported: ASCOM requires MethodNotImplementedException
     Json(AlpacaResponse::<()>::error(
         request.client_transaction_i_d,
         server_id,
-        0x40B, // PropertyNotImplementedException
+        0x400, // NotImplementedException
         "Switch names are read-only and cannot be set".to_string(),
     ))
     .into_response()
@@ -1193,4 +1184,40 @@ pub async fn put_commandstring(
         "CommandString is not implemented".to_string(),
     ))
     .into_response()
+}
+
+#[cfg(test)]
+mod put_parameter_tests {
+    use super::*;
+
+    fn parse<T: serde::de::DeserializeOwned>(body: &str) -> Result<T, serde_urlencoded::de::Error> {
+        serde_urlencoded::from_str(body)
+    }
+
+    #[test]
+    fn set_switch_requires_exact_parameter_names() {
+        let ok: SetSwitchRequest = parse("Id=0&State=True&ClientID=1&ClientTransactionID=7").unwrap();
+        assert_eq!((ok.id, ok.state, ok.client_transaction_i_d), (0, true, 7));
+        assert!(!parse::<SetSwitchRequest>("Id=0&State=false").unwrap().state);
+
+        assert!(parse::<SetSwitchRequest>("id=0&State=True").is_err());
+        assert!(parse::<SetSwitchRequest>("Id=0&state=True").is_err());
+        assert!(parse::<SetSwitchValueRequest>("ID=0&Value=1.5").is_err());
+        assert!(parse::<SetSwitchNameRequest>("Id=0&name=Roof").is_err());
+    }
+
+    #[test]
+    fn set_switch_rejects_bad_state_values() {
+        for bad in ["State=123", "State=yes", "State=1", "State="] {
+            assert!(parse::<SetSwitchRequest>(&format!("Id=0&{}", bad)).is_err(), "{} accepted", bad);
+        }
+    }
+
+    #[test]
+    fn wrongly_cased_client_transaction_id_is_ignored() {
+        let req: SetSwitchValueRequest = parse("Id=0&Value=1&clienttransactionid=67890").unwrap();
+        assert_eq!(req.client_transaction_i_d, 0);
+        let req: ConnectedRequest = parse("Connected=true&ClientTransactionId=67890").unwrap();
+        assert_eq!(req.client_transaction_i_d, 0);
+    }
 }
