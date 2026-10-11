@@ -176,6 +176,10 @@ impl WeatherStore {
         format!("tempest:{}", serial_number)
     }
 
+    pub fn ecowitt_key(host: &str) -> String {
+        format!("ecowitt:{}", host.trim().to_ascii_lowercase())
+    }
+
     pub fn update(&mut self, key: String, observation: WeatherObservation) {
         self.observations.insert(key, observation);
     }
@@ -193,6 +197,9 @@ impl WeatherStore {
                     .map(|(_, obs)| obs)
                     .max_by_key(|obs| obs.timestamp)
             }
+            WeatherDataSource::Ecowitt { host, .. } => {
+                self.observations.get(&Self::ecowitt_key(host))
+            }
             WeatherDataSource::WeatherUnderground { .. } => None,
         }
     }
@@ -203,6 +210,19 @@ impl WeatherStore {
 pub fn supported_properties(source: &WeatherDataSource) -> &'static [WeatherProperty] {
     match source {
         WeatherDataSource::Tempest { .. } => &WeatherProperty::ALL,
+        // No light sensor usable at night, so no SkyBrightness
+        WeatherDataSource::Ecowitt { .. } => &[
+            WeatherProperty::Temperature,
+            WeatherProperty::Humidity,
+            WeatherProperty::DewPoint,
+            WeatherProperty::Pressure,
+            WeatherProperty::WindSpeed,
+            WeatherProperty::WindGust,
+            WeatherProperty::WindDirection,
+            WeatherProperty::RainRate,
+            WeatherProperty::SolarRadiation,
+            WeatherProperty::UvIndex,
+        ],
         WeatherDataSource::WeatherUnderground { .. } => &[],
     }
 }

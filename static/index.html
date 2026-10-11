@@ -399,6 +399,7 @@
                         <label>Data Source *</label>
                         <select id="weather-device-source-type" onchange="updateWeatherSourceFields()">
                             <option value="tempest">Tempest Weather Station (UDP)</option>
+                            <option value="ecowitt">Ecowitt Gateway (HTTP polling)</option>
                             <option value="weatherunderground" disabled>Weather Underground (Future)</option>
                         </select>
                     </div>
@@ -407,6 +408,19 @@
                             <label>Tempest Serial Number (optional)</label>
                             <input type="text" id="weather-device-tempest-serial" placeholder="e.g., ST-00012345">
                             <div class="info-text">Leave empty to accept data from any Tempest device on the network</div>
+                        </div>
+                    </div>
+                    <div id="ecowitt-fields" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Gateway Host *</label>
+                                <input type="text" id="weather-device-ecowitt-host" placeholder="e.g., ecowitt.local or 192.168.1.50">
+                                <div class="info-text">Hostname or IP of a GW1100/GW2000/GW3000 gateway; polls /get_livedata_info</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Poll Interval (seconds)</label>
+                                <input type="number" id="weather-device-ecowitt-interval" value="30" min="5">
+                            </div>
                         </div>
                     </div>
                     <div id="wu-fields" style="display: none;">

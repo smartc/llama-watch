@@ -85,6 +85,8 @@ function resetWeatherDeviceForm() {
     document.getElementById('weather-device-description').value = '';
     document.getElementById('weather-device-source-type').value = 'tempest';
     document.getElementById('weather-device-tempest-serial').value = '';
+    document.getElementById('weather-device-ecowitt-host').value = '';
+    document.getElementById('weather-device-ecowitt-interval').value = 30;
     document.getElementById('weather-device-wu-station').value = '';
     document.getElementById('weather-device-wu-apikey').value = '';
     document.getElementById('weather-device-enabled').checked = true;
@@ -113,6 +115,10 @@ function populateWeatherDeviceForm(device) {
     if (device.source.type === 'tempest') {
         document.getElementById('weather-device-source-type').value = 'tempest';
         document.getElementById('weather-device-tempest-serial').value = device.source.serial_number || '';
+    } else if (device.source.type === 'ecowitt') {
+        document.getElementById('weather-device-source-type').value = 'ecowitt';
+        document.getElementById('weather-device-ecowitt-host').value = device.source.host || '';
+        document.getElementById('weather-device-ecowitt-interval').value = device.source.poll_interval_seconds || 30;
     } else if (device.source.type === 'weatherunderground') {
         document.getElementById('weather-device-source-type').value = 'weatherunderground';
         document.getElementById('weather-device-wu-station').value = device.source.station_id || '';
@@ -147,6 +153,7 @@ function populateWeatherDeviceForm(device) {
 function updateWeatherSourceFields() {
     const sourceType = document.getElementById('weather-device-source-type').value;
     document.getElementById('tempest-fields').style.display = sourceType === 'tempest' ? 'block' : 'none';
+    document.getElementById('ecowitt-fields').style.display = sourceType === 'ecowitt' ? 'block' : 'none';
     document.getElementById('wu-fields').style.display = sourceType === 'weatherunderground' ? 'block' : 'none';
 }
 
@@ -177,6 +184,17 @@ async function saveWeatherDevice() {
         source = {
             type: 'tempest',
             serial_number: serial || null
+        };
+    } else if (sourceType === 'ecowitt') {
+        const host = document.getElementById('weather-device-ecowitt-host').value.trim();
+        if (!host) {
+            showNotification('Ecowitt gateway host is required', 'error');
+            return;
+        }
+        source = {
+            type: 'ecowitt',
+            host,
+            poll_interval_seconds: parseInt(document.getElementById('weather-device-ecowitt-interval').value) || 30
         };
     } else {
         source = {

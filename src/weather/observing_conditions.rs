@@ -94,6 +94,7 @@ pub fn get_sensor_description(config: &WeatherDeviceConfig, property: WeatherPro
 pub fn source_type_label(source: &WeatherDataSource) -> &'static str {
     match source {
         WeatherDataSource::Tempest { .. } => "Tempest weather station",
+        WeatherDataSource::Ecowitt { .. } => "Ecowitt gateway",
         WeatherDataSource::WeatherUnderground { .. } => "Weather Underground",
     }
 }

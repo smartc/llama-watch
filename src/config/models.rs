@@ -185,6 +185,21 @@ impl AppConfig {
             }
         }
 
+        for device in self.weather_devices.values() {
+            if let WeatherDataSource::Ecowitt { host, poll_interval_seconds } = &device.source {
+                if host.trim().is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' has no Ecowitt gateway host", device.name
+                    ));
+                }
+                if *poll_interval_seconds < 5 {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' poll interval must be at least 5 seconds", device.name
+                    ));
+                }
+            }
+        }
+
         // Validate that all monitor group members reference valid monitors
         for group in self.monitor_groups.values() {
             if group.members.is_empty() {
@@ -300,11 +315,17 @@ pub struct WeatherDeviceConfig {
     pub safety_thresholds: Option<WeatherSafetyThresholds>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum WeatherDataSource {
     Tempest {
         serial_number: Option<String>, // If None, accept any Tempest device
+    },
+    /// Ecowitt gateway polled over its local HTTP API
+    Ecowitt {
+        host: String, // Hostname or IP of the gateway
+        #[serde(default = "default_ecowitt_poll_interval")]
+        poll_interval_seconds: u64,
     },
     WeatherUnderground {
         station_id: String,
@@ -358,6 +379,10 @@ pub struct ThresholdConfig {
     pub safe_when_true: bool,
     #[serde(default)]
     pub timeout_seconds: Option<i64>, // Per-measurement timeout (overrides global if set, <0 = ignore timeout)
+}
+
+fn default_ecowitt_poll_interval() -> u64 {
+    30
 }
 
 fn default_auto_connect() -> bool {

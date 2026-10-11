@@ -518,6 +518,10 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
+.badge-ecowitt {
+    background: linear-gradient(135deg, #43e97b 0%, #38a169 100%);
+}
+
 .badge-weatherunderground {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
 }

@@ -23,7 +23,7 @@ use config::load_config;
 use logging::DebugLogger;
 use monitors::MonitorState;
 use switches::SwitchManager;
-use weather::{TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor, WeatherStore};
+use weather::{EcowittPollers, TempestListener, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor, WeatherStore};
 use web::handlers::WebState;
 use std::collections::HashMap;
 
@@ -84,6 +84,11 @@ async fn main() -> Result<()> {
         }
     });
     info!("🌤️  Tempest UDP listener started on port {}", config.tempest_udp_port);
+
+    // Start polling configured Ecowitt gateways
+    let mut ecowitt_pollers = EcowittPollers::default();
+    ecowitt_pollers.sync(&config.weather_devices, &weather_store);
+    let ecowitt_pollers = Arc::new(tokio::sync::Mutex::new(ecowitt_pollers));
 
     // Create ObservingConditions devices from configuration
     let mut oc_devices = HashMap::new();
@@ -180,6 +185,7 @@ async fn main() -> Result<()> {
         oc_devices: oc_devices_shared.clone(),
         weather_monitors: shared_weather_monitors.clone(),
         weather_data: weather_data_accessor.clone(),
+        ecowitt_pollers: ecowitt_pollers.clone(),
     });
 
     // Start periodic status logging task

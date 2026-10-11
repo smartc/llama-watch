@@ -15,7 +15,7 @@ use crate::{
     logging::{DebugLogger, LogFileInfo},
     monitors::MonitorState,
     switches::SharedSwitchManager,
-    weather::{WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor},
+    weather::{EcowittPollers, WeatherMonitorManager, ObservingConditionsDevice, WeatherDataAccessor},
 };
 use std::collections::HashMap;
 
@@ -30,6 +30,7 @@ pub struct WebState {
     pub oc_devices: Arc<RwLock<HashMap<u32, Arc<ObservingConditionsDevice>>>>,
     pub weather_monitors: Arc<RwLock<WeatherMonitorManager>>,
     pub weather_data: Arc<WeatherDataAccessor>,
+    pub ecowitt_pollers: Arc<tokio::sync::Mutex<EcowittPollers>>,
 }
 
 pub type SharedWebState = Arc<WebState>;
@@ -69,6 +70,9 @@ pub async fn update_config(
         let mut manager = switch_manager.write().await;
         manager.reload(&new_config);
     }
+
+    // Start/stop polled weather sources
+    state.ecowitt_pollers.lock().await.sync(&new_config.weather_devices, &state.weather_data.store);
 
     // Update in-memory configuration
     *state.config.write().await = new_config;
@@ -507,6 +511,7 @@ pub async fn get_weather_devices(
 
         let source_type = match &device_config.source {
             WeatherDataSource::Tempest { .. } => "tempest".to_string(),
+            WeatherDataSource::Ecowitt { .. } => "ecowitt".to_string(),
             WeatherDataSource::WeatherUnderground { .. } => "weatherunderground".to_string(),
         };
 
@@ -562,6 +567,9 @@ pub async fn create_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
+    // Start/stop polled weather sources
+    state.ecowitt_pollers.lock().await.sync(&config.weather_devices, &state.weather_data.store);
+
     // Release config lock before acquiring other locks
     drop(config);
 
@@ -611,6 +619,9 @@ pub async fn update_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
+    // Start/stop polled weather sources
+    state.ecowitt_pollers.lock().await.sync(&config.weather_devices, &state.weather_data.store);
+
     // Release config lock before acquiring other locks
     drop(config);
 
@@ -659,6 +670,9 @@ pub async fn delete_weather_device(
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
 
+    // Start/stop polled weather sources
+    state.ecowitt_pollers.lock().await.sync(&config.weather_devices, &state.weather_data.store);
+
     // Release config lock before acquiring other locks
     drop(config);
 
@@ -692,6 +706,9 @@ pub async fn toggle_weather_device(
     if let Err(e) = save_config(&config).await {
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
+
+    // Start/stop polled weather sources
+    state.ecowitt_pollers.lock().await.sync(&config.weather_devices, &state.weather_data.store);
 
     // TODO: Enable/disable device without restarting service
 
