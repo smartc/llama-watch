@@ -1,6 +1,7 @@
 #!/bin/bash
 # Installation script for llama-watch systemd service
 # Run with sudo: sudo ./install-service.sh
+# Safe to run again to upgrade: the existing configuration is kept.
 
 set -e
 
@@ -37,21 +38,29 @@ echo "Creating directories..."
 mkdir -p "$DATA_DIR"
 mkdir -p "$STATIC_DIR"
 
-# Copy binary
+# Install binary. `install` replaces the destination itself, so if
+# $INSTALL_DIR/llama-watch is a symlink the file it points to is left alone.
 echo "Installing binary to $INSTALL_DIR..."
-cp "$SOURCE_DIR/target/release/llama-watch" "$INSTALL_DIR/llama-watch"
-chmod 755 "$INSTALL_DIR/llama-watch"
+install -m 755 "$SOURCE_DIR/target/release/llama-watch" "$INSTALL_DIR/llama-watch"
 
-# Copy static files
+# Install static files, replacing any previous copy so files removed in a
+# newer version don't linger
 echo "Installing static files to $STATIC_DIR..."
-cp -r "$SOURCE_DIR/static" "$STATIC_DIR/"
+rm -rf "$STATIC_DIR/static.new"
+cp -r "$SOURCE_DIR/static" "$STATIC_DIR/static.new"
+rm -rf "$STATIC_DIR/static"
+mv "$STATIC_DIR/static.new" "$STATIC_DIR/static"
 
-# Create symlink for static files in data directory
-ln -sf "$STATIC_DIR/static" "$DATA_DIR/static"
+# Link static files into the data directory. -n replaces an existing link
+# instead of following it and creating a link inside the static directory.
+ln -sfn "$STATIC_DIR/static" "$DATA_DIR/static"
 
-# Copy existing config if present
-if [ -f "$SOURCE_DIR/config.json" ]; then
-    echo "Copying existing configuration..."
+# Copy a configuration only on first install; never overwrite the live one,
+# which holds changes made in the web UI
+if [ -f "$DATA_DIR/config.json" ]; then
+    echo "Keeping existing configuration in $DATA_DIR/config.json"
+elif [ -f "$SOURCE_DIR/config.json" ]; then
+    echo "Copying configuration..."
     cp "$SOURCE_DIR/config.json" "$DATA_DIR/config.json"
 fi
 
@@ -71,15 +80,15 @@ systemctl daemon-reload
 echo ""
 echo "Installation complete!"
 echo ""
-echo "To enable and start the service:"
-echo "  sudo systemctl enable llama-watch"
-echo "  sudo systemctl start llama-watch"
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "The service is running the previous version. Restart it to use this one:"
+    echo "  sudo systemctl restart $SERVICE_NAME"
+else
+    echo "To enable and start the service:"
+    echo "  sudo systemctl enable $SERVICE_NAME"
+    echo "  sudo systemctl start $SERVICE_NAME"
+fi
 echo ""
 echo "To check status:"
-echo "  sudo systemctl status llama-watch"
+echo "  sudo systemctl status $SERVICE_NAME"
 echo ""
-echo "To view logs:"
-echo "  sudo journalctl -u llama-watch -f"
-echo ""
-echo "Configuration file location: $DATA_DIR/config.json"
-echo "Web UI will be available at: http://localhost:8080"

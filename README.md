@@ -48,6 +48,19 @@ cargo build --release
 # The binary will be in target/release/llama-watch
 ```
 
+Prebuilt 64-bit ARM Linux binaries are attached to [GitHub releases](https://github.com/smartc/llama-watch/releases). Each archive has the same layout as the source tree, so the service installer below works from the unpacked folder.
+
+### Running as a systemd Service
+
+```bash
+sudo ./install-service.sh
+sudo systemctl enable --now llama-watch
+```
+
+This installs the binary to `/usr/local/bin`, the web UI to `/usr/share/llama-watch`, and keeps configuration in `/var/lib/llama-watch/config.json`, running as a dedicated `llama-watch` user. If a `config.json` is next to the script on first install, it is used as the starting configuration.
+
+To upgrade, build or unpack the new version and run `sudo ./install-service.sh` again, then `sudo systemctl restart llama-watch`. Your existing configuration is kept.
+
 ## Quick Start
 
 1. **Run the server**:
