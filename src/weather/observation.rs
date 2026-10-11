@@ -345,8 +345,9 @@ pub fn supported_properties(source: &WeatherDataSource) -> Vec<WeatherProperty> 
         ],
         // Whatever was selected when the source was configured
         WeatherDataSource::Alpaca { properties, .. } => properties.clone(),
-        // No Pressure: WU reports it reduced to sea level, not at the station
-        WeatherDataSource::WeatherUnderground { .. } => vec![
+        // WU only has sea-level pressure; it is converted to station pressure
+        // when the station's altitude is configured
+        WeatherDataSource::WeatherUnderground { pressure_altitude_m, .. } => [
             WeatherProperty::Temperature,
             WeatherProperty::Humidity,
             WeatherProperty::DewPoint,
@@ -356,7 +357,9 @@ pub fn supported_properties(source: &WeatherDataSource) -> Vec<WeatherProperty> 
             WeatherProperty::RainRate,
             WeatherProperty::SolarRadiation,
             WeatherProperty::UvIndex,
-        ],
+        ].into_iter()
+            .chain(pressure_altitude_m.map(|_| WeatherProperty::Pressure))
+            .collect(),
     }
 }
 
@@ -384,6 +387,18 @@ mod tests {
         ]);
         let obs = WeatherObservation::new(Utc::now(), values);
         assert_eq!(obs.get(WeatherProperty::DewPoint), Some(1.0));
+    }
+
+    #[test]
+    fn weather_underground_provides_pressure_only_with_altitude() {
+        let source = |pressure_altitude_m| WeatherDataSource::WeatherUnderground {
+            station_id: "ISTATION1".into(),
+            api_key: "key".into(),
+            poll_interval_seconds: 120,
+            pressure_altitude_m,
+        };
+        assert!(!supported_properties(&source(None)).contains(&WeatherProperty::Pressure));
+        assert!(supported_properties(&source(Some(1100.0))).contains(&WeatherProperty::Pressure));
     }
 
     #[test]

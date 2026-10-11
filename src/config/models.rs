@@ -246,7 +246,12 @@ impl AppConfig {
                     ));
                 }
             }
-            if let WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds } = &device.source {
+            if let WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds, pressure_altitude_m } = &device.source {
+                if pressure_altitude_m.is_some_and(|a| !(0.0..=9000.0).contains(&a)) {
+                    return Err(anyhow::anyhow!(
+                        "Weather device '{}' pressure altitude must be between 0 and 9000 m", device.name
+                    ));
+                }
                 if station_id.trim().is_empty() || api_key.trim().is_empty() {
                     return Err(anyhow::anyhow!(
                         "Weather device '{}' needs a Weather Underground station ID and API key", device.name
@@ -518,6 +523,10 @@ pub enum WeatherDataSource {
         api_key: String,
         #[serde(default = "default_wu_poll_interval")]
         poll_interval_seconds: u64, // PWS keys allow 1500 calls/day, so at least 60
+        /// Altitude (m) the station uses to reduce its pressure to sea level. WU only
+        /// has the sea-level value; when set, it is converted back to station pressure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pressure_altitude_m: Option<f64>,
     },
 }
 

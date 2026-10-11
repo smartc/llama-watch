@@ -38,8 +38,10 @@ impl SourcePollers {
                 WeatherDataSource::Alpaca { host, port, device_number, poll_interval_seconds, properties } => tokio::spawn(
                     alpaca::poll_device(host.clone(), *port, *device_number, properties.clone(), *poll_interval_seconds, store.clone()),
                 ),
-                WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds } => tokio::spawn(
-                    weather_underground::poll_station(station_id.clone(), api_key.clone(), *poll_interval_seconds, store.clone()),
+                WeatherDataSource::WeatherUnderground { station_id, api_key, poll_interval_seconds, pressure_altitude_m } => tokio::spawn(
+                    weather_underground::poll_station(
+                        station_id.clone(), api_key.clone(), *poll_interval_seconds, *pressure_altitude_m, store.clone(),
+                    ),
                 ),
                 _ => continue,
             };

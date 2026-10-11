@@ -219,7 +219,9 @@ This prevents brief UNSAFE blips when adding/removing monitors.
   timestamped from the device's `timesincelastupdate`, so a stuck sensor goes stale even while polls succeed
 - Weather Underground: `GET https://api.weather.com/v2/pws/observations/current` (units=m) every
   `poll_interval_seconds` (default 120, minimum 60: PWS keys allow 1500 calls/day). Values are timestamped from
-  `obsTimeUtc`; wind is converted from km/h. No Pressure (WU reports it reduced to sea level). The API key is in
+  `obsTimeUtc`; wind is converted from km/h. WU only has sea-level pressure (the station's `baromin` upload); Pressure
+  is provided only when `pressure_altitude_m` is set, converted back with the hypsometric equation
+  (`weather_underground::station_pressure`, ~1 hPa vs. an Ecowitt gateway's own absolute reading). The API key is in
   the request URL, so request errors are logged with `reqwest::Error::without_url()`; never log the URL or source config.
   Test fixture (redacted): `src/weather/testdata/wu_pws_current.json`
 

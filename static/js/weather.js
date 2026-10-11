@@ -383,6 +383,7 @@ function resetWeatherDeviceForm() {
     document.getElementById('weather-device-wu-station').value = '';
     document.getElementById('weather-device-wu-apikey').value = '';
     document.getElementById('weather-device-wu-interval').value = 120;
+    document.getElementById('weather-device-wu-altitude').value = '';
     document.getElementById('weather-device-enabled').checked = true;
     document.getElementById('weather-device-expose').checked = true;
     document.getElementById('weather-device-auto-connect').checked = true;
@@ -423,6 +424,8 @@ function populateWeatherDeviceForm(device) {
         document.getElementById('weather-device-wu-station').value = device.source.station_id || '';
         document.getElementById('weather-device-wu-apikey').value = device.source.api_key || '';
         document.getElementById('weather-device-wu-interval').value = device.source.poll_interval_seconds || 120;
+        document.getElementById('weather-device-wu-altitude').value =
+            device.source.pressure_altitude_m != null ? device.source.pressure_altitude_m : '';
     }
     updateWeatherSourceFields();
 
@@ -641,7 +644,13 @@ async function saveWeatherDevice() {
                 showNotification('Weather Underground poll interval must be at least 60 seconds', 'error');
                 return;
             }
-            source = { type: 'weatherunderground', station_id, api_key, poll_interval_seconds };
+            const altitudeText = document.getElementById('weather-device-wu-altitude').value.trim();
+            const pressure_altitude_m = altitudeText === '' ? null : parseFloat(altitudeText);
+            if (pressure_altitude_m !== null && !(pressure_altitude_m >= 0 && pressure_altitude_m <= 9000)) {
+                showNotification('Station altitude must be between 0 and 9000 m', 'error');
+                return;
+            }
+            source = { type: 'weatherunderground', station_id, api_key, poll_interval_seconds, pressure_altitude_m };
         }
 
         url = currentWeatherDevice ? `/api/weather/devices/${deviceNumber}` : '/api/weather/devices';
